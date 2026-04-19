@@ -8,8 +8,13 @@ use arrow_array::{
 };
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use futures_core::Stream;
-use lynxes_core::{Direction, EdgeFrame, GraphFrame, NodeFrame, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL};
-use lynxes_io::{read_gfb_streaming, read_gfb_streaming_with_options, write_gfb, GfbReadOptions, GfbWriteOptions};
+use lynxes_core::{
+    Direction, EdgeFrame, GraphFrame, NodeFrame, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC,
+    COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
+};
+use lynxes_io::{
+    read_gfb_streaming, read_gfb_streaming_with_options, write_gfb, GfbReadOptions, GfbWriteOptions,
+};
 
 fn labels_array(values: &[&[&str]]) -> ListArray {
     let mut builder = ListBuilder::new(StringBuilder::new());
@@ -82,15 +87,18 @@ fn read_gfb_streaming_yields_one_graph_then_ends() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(async {
         let mut stream = read_gfb_streaming(&path).unwrap();
-        let first = poll_fn(|cx| -> std::task::Poll<Option<_>> { Pin::new(&mut stream).poll_next(cx) })
-            .await
-            .unwrap()
-            .unwrap();
+        let first =
+            poll_fn(|cx| -> std::task::Poll<Option<_>> { Pin::new(&mut stream).poll_next(cx) })
+                .await
+                .unwrap()
+                .unwrap();
         assert_eq!(first.node_count(), graph.node_count());
         assert_eq!(first.edge_count(), graph.edge_count());
-        assert!(poll_fn(|cx| -> std::task::Poll<Option<_>> { Pin::new(&mut stream).poll_next(cx) })
-            .await
-            .is_none());
+        assert!(poll_fn(|cx| -> std::task::Poll<Option<_>> {
+            Pin::new(&mut stream).poll_next(cx)
+        })
+        .await
+        .is_none());
     });
 
     let _ = std::fs::remove_file(&path);
@@ -116,10 +124,11 @@ fn read_gfb_streaming_with_projection_uses_same_options_contract() {
         )
         .unwrap();
 
-        let batch = poll_fn(|cx| -> std::task::Poll<Option<_>> { Pin::new(&mut stream).poll_next(cx) })
-            .await
-            .unwrap()
-            .unwrap();
+        let batch =
+            poll_fn(|cx| -> std::task::Poll<Option<_>> { Pin::new(&mut stream).poll_next(cx) })
+                .await
+                .unwrap()
+                .unwrap();
         assert_eq!(
             batch.nodes().column_names(),
             vec![COL_NODE_ID, COL_NODE_LABEL, "age"]

@@ -27,7 +27,8 @@ impl GraphFrame {
             rows.sort_by(|a, b| {
                 let av = a.values.get(sort_by).cloned().unwrap_or_default();
                 let bv = b.values.get(sort_by).cloned().unwrap_or_default();
-                av.cmp(&bv).then_with(|| a.stable_index.cmp(&b.stable_index))
+                av.cmp(&bv)
+                    .then_with(|| a.stable_index.cmp(&b.stable_index))
             });
         }
 
@@ -169,7 +170,15 @@ fn project_rows(
         let dst_type = node_type(graph, dst).unwrap_or_else(|| "-".to_owned());
         let promoted_values =
             promoted_row_values(graph, promoted, Some(row), Some(src), Some(dst), false);
-        let attrs = attr_summary(graph, options, promoted, Some(row), Some(src), Some(dst), false);
+        let attrs = attr_summary(
+            graph,
+            options,
+            promoted,
+            Some(row),
+            Some(src),
+            Some(dst),
+            false,
+        );
 
         let mut values = BTreeMap::new();
         values.insert("#".to_owned(), row.to_string());
@@ -191,8 +200,7 @@ fn project_rows(
     }
 
     for (offset, node_id) in isolated.iter().enumerate() {
-        let promoted_values =
-            promoted_row_values(graph, promoted, None, Some(node_id), None, true);
+        let promoted_values = promoted_row_values(graph, promoted, None, Some(node_id), None, true);
         let attrs = attr_summary(graph, options, promoted, None, Some(node_id), None, true);
         let mut values = BTreeMap::new();
         values.insert("#".to_owned(), (graph.edge_count() + offset).to_string());
@@ -315,7 +323,8 @@ fn attr_summary(
             if used_keys.contains(&name) || promoted.contains(&name) {
                 continue;
             }
-            if let Some(value) = value_from_origin(graph.edges().to_record_batch(), &name, edge_row) {
+            if let Some(value) = value_from_origin(graph.edges().to_record_batch(), &name, edge_row)
+            {
                 tokens.push(format!("{name}={value}"));
                 used_keys.insert(name);
             }
@@ -337,7 +346,9 @@ fn attr_summary(
                     .and_then(|src| node_value(graph, src, name))
                     .is_some()
                     || edge_row
-                        .and_then(|row| value_from_origin(graph.edges().to_record_batch(), name, row))
+                        .and_then(|row| {
+                            value_from_origin(graph.edges().to_record_batch(), name, row)
+                        })
                         .is_some();
                 if duplicate {
                     tokens.push(format!("{prefix}.{name}={value}"));
@@ -357,7 +368,8 @@ fn attr_summary(
 }
 
 fn value_from_origin(batch: &arrow_array::RecordBatch, name: &str, row: usize) -> Option<String> {
-    batch.column_by_name(name)
+    batch
+        .column_by_name(name)
         .and_then(|array| format_cell_value(array.as_ref(), row))
 }
 

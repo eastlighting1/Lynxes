@@ -7,8 +7,8 @@ use std::{
 
 use arrow_array::BooleanArray;
 use lynxes_connect::{
-    AqlQuery, AqlValue, ArangoBackend, ArangoConfig, ArangoConnector, Connector,
-    ConnectorFuture, ExpandResult,
+    AqlQuery, AqlValue, ArangoBackend, ArangoConfig, ArangoConnector, Connector, ConnectorFuture,
+    ExpandResult,
 };
 use lynxes_core::{
     BinaryOp, Direction, EdgeFrame, EdgeTypeSpec, Expr, GFError, NodeFrame, ScalarValue,
@@ -51,10 +51,7 @@ impl MockArangoBackend {
 }
 
 impl ArangoBackend for MockArangoBackend {
-    fn load_nodes<'a>(
-        &'a self,
-        query: AqlQuery,
-    ) -> ConnectorFuture<'a, NodeFrame> {
+    fn load_nodes<'a>(&'a self, query: AqlQuery) -> ConnectorFuture<'a, NodeFrame> {
         Box::pin(async move {
             self.node_queries.lock().unwrap().push(query);
             self.node_pages
@@ -67,10 +64,7 @@ impl ArangoBackend for MockArangoBackend {
         })
     }
 
-    fn load_edges<'a>(
-        &'a self,
-        query: AqlQuery,
-    ) -> ConnectorFuture<'a, EdgeFrame> {
+    fn load_edges<'a>(&'a self, query: AqlQuery) -> ConnectorFuture<'a, EdgeFrame> {
         Box::pin(async move {
             self.edge_queries.lock().unwrap().push(query);
             self.edge_pages
@@ -83,10 +77,7 @@ impl ArangoBackend for MockArangoBackend {
         })
     }
 
-    fn expand<'a>(
-        &'a self,
-        query: AqlQuery,
-    ) -> ConnectorFuture<'a, ExpandResult> {
+    fn expand<'a>(&'a self, query: AqlQuery) -> ConnectorFuture<'a, ExpandResult> {
         Box::pin(async move {
             self.expand_queries.lock().unwrap().push(query);
             self.expand_results
@@ -142,14 +133,8 @@ async fn arango_connector_pushes_down_nodes_and_paginates() {
         queries[0].bind_vars.get("@vertex_collection"),
         Some(&AqlValue::String("vertices".to_owned()))
     );
-    assert_eq!(
-        queries[0].bind_vars.get("offset"),
-        Some(&AqlValue::Int(0))
-    );
-    assert_eq!(
-        queries[1].bind_vars.get("offset"),
-        Some(&AqlValue::Int(2))
-    );
+    assert_eq!(queries[0].bind_vars.get("offset"), Some(&AqlValue::Int(0)));
+    assert_eq!(queries[1].bind_vars.get("offset"), Some(&AqlValue::Int(2)));
 }
 
 #[tokio::test]

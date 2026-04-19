@@ -14,12 +14,9 @@ Covers:
   - GFError → Python exception mapping
 """
 
-import os
-import pathlib
-
 import pytest
-import lynxes as gf
 
+import lynxes as gf
 
 # ── Loading ───────────────────────────────────────────────────────────────────
 
@@ -68,19 +65,11 @@ class TestFilterNodes:
 
     def test_label_contains_filter(self, graph):
         # Only Person nodes (4 of them)
-        nf = (
-            graph.lazy()
-            .filter_nodes(gf.col("_label").contains("Person"))
-            .collect_nodes()
-        )
+        nf = graph.lazy().filter_nodes(gf.col("_label").contains("Person")).collect_nodes()
         assert nf.len() == 4
 
     def test_label_contains_company(self, graph):
-        nf = (
-            graph.lazy()
-            .filter_nodes(gf.col("_label").contains("Company"))
-            .collect_nodes()
-        )
+        nf = graph.lazy().filter_nodes(gf.col("_label").contains("Company")).collect_nodes()
         assert nf.len() == 1
 
 
@@ -106,9 +95,7 @@ class TestExpand:
             .expand(hops=2, direction="out")
             .collect()
         )
-        node_ids = {
-            row for row in result.nodes().to_pyarrow()["_id"].to_pylist()
-        }
+        node_ids = {row for row in result.nodes().to_pyarrow()["_id"].to_pylist()}
         assert "charlie" in node_ids
 
     def test_expand_with_edge_type_filter(self, graph):
@@ -119,9 +106,7 @@ class TestExpand:
             .expand(edge_type="KNOWS", hops=2, direction="out")
             .collect()
         )
-        node_ids = {
-            row for row in result.nodes().to_pyarrow()["_id"].to_pylist()
-        }
+        node_ids = {row for row in result.nodes().to_pyarrow()["_id"].to_pylist()}
         assert "acme" not in node_ids
 
     def test_expand_in_direction(self, graph):
@@ -133,9 +118,7 @@ class TestExpand:
             .expand(hops=1, direction="in")
             .collect()
         )
-        node_ids = {
-            row for row in result.nodes().to_pyarrow()["_id"].to_pylist()
-        }
+        node_ids = {row for row in result.nodes().to_pyarrow()["_id"].to_pylist()}
         assert "bob" in node_ids
 
 
@@ -313,12 +296,8 @@ class TestNodeFrameSetOps:
 
     def test_concat_disjoint_frames(self, graph):
         # Split into Persons and non-Persons, then concat should rebuild full set.
-        persons = graph.lazy().filter_nodes(
-            gf.col("_label").contains("Person")
-        ).collect_nodes()
-        companies = graph.lazy().filter_nodes(
-            gf.col("_label").contains("Company")
-        ).collect_nodes()
+        persons = graph.lazy().filter_nodes(gf.col("_label").contains("Person")).collect_nodes()
+        companies = graph.lazy().filter_nodes(gf.col("_label").contains("Company")).collect_nodes()
         merged = gf.NodeFrame.concat([persons, companies])
         assert merged.len() == persons.len() + companies.len()
 
@@ -335,9 +314,7 @@ class TestNodeFrameSetOps:
     def test_intersect_with_subset(self, graph):
         all_nodes = graph.nodes()
         # Filter to persons only (alice, bob, charlie, diana)
-        persons = graph.lazy().filter_nodes(
-            gf.col("_label").contains("Person")
-        ).collect_nodes()
+        persons = graph.lazy().filter_nodes(gf.col("_label").contains("Person")).collect_nodes()
         intersection = all_nodes.intersect(persons)
         # Result must be ≤ persons
         assert intersection.len() == persons.len()
@@ -349,9 +326,7 @@ class TestNodeFrameSetOps:
 
     def test_difference_removes_subset(self, graph):
         all_nodes = graph.nodes()
-        persons = graph.lazy().filter_nodes(
-            gf.col("_label").contains("Person")
-        ).collect_nodes()
+        persons = graph.lazy().filter_nodes(gf.col("_label").contains("Person")).collect_nodes()
         diff = all_nodes.difference(persons)
         # Only Company nodes remain
         assert diff.len() == all_nodes.len() - persons.len()
@@ -371,7 +346,7 @@ class TestAggExprAlias:
         )
         cols = result.column_names()
         assert "friend_count" in cols, f"expected 'friend_count' in {cols}"
-        assert "count" not in cols, f"bare 'count' should not appear when aliased"
+        assert "count" not in cols, "bare 'count' should not appear when aliased"
 
     def test_alias_preserves_values(self, graph):
         # alice has 2 outgoing KNOWS edges; bob, charlie, diana, acme have 0
@@ -381,7 +356,6 @@ class TestAggExprAlias:
             .aggregate_neighbors("KNOWS", gf.count().alias("n_friends"))
             .collect_nodes()
         )
-        import pyarrow as pa
         rb = result.to_pyarrow()
         col = rb.column("n_friends")
         assert col[0].as_py() == 2
@@ -403,29 +377,35 @@ class TestMatchPattern:
     """GF-200: match_pattern() wires the LazyGraphFrame plan node correctly."""
 
     def test_match_pattern_returns_lazy(self, graph):
-        lazy = graph.lazy().match_pattern([
-            gf.node("a", "Person"),
-            gf.edge("KNOWS"),
-            gf.node("b", "Person"),
-        ])
+        lazy = graph.lazy().match_pattern(
+            [
+                gf.node("a", "Person"),
+                gf.edge("KNOWS"),
+                gf.node("b", "Person"),
+            ]
+        )
         assert type(lazy).__name__ == "LazyGraphFrame"
 
     def test_match_pattern_explain_contains_pattern_match(self, graph):
-        lazy = graph.lazy().match_pattern([
-            gf.node("a"),
-            gf.edge(),
-            gf.node("b"),
-        ])
+        lazy = graph.lazy().match_pattern(
+            [
+                gf.node("a"),
+                gf.edge(),
+                gf.node("b"),
+            ]
+        )
         plan = lazy.explain()
         assert "PatternMatch" in plan
 
     def test_match_pattern_collect_raises_not_implemented(self, graph):
         """PatternMatch executor is not yet implemented — collect() must raise."""
-        lazy = graph.lazy().match_pattern([
-            gf.node("a", "Person"),
-            gf.edge("KNOWS"),
-            gf.node("b", "Person"),
-        ])
+        lazy = graph.lazy().match_pattern(
+            [
+                gf.node("a", "Person"),
+                gf.edge("KNOWS"),
+                gf.node("b", "Person"),
+            ]
+        )
         with pytest.raises((NotImplementedError, RuntimeError)):
             lazy.collect()
 

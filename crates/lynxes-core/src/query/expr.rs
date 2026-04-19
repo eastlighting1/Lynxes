@@ -743,7 +743,9 @@ mod tests {
         // Inner alias should also round-trip nested (alias of sum).
         let agg2 = AggExpr::Alias {
             expr: Box::new(AggExpr::Sum {
-                expr: Expr::Col { name: "weight".to_owned() },
+                expr: Expr::Col {
+                    name: "weight".to_owned(),
+                },
             }),
             name: "total_weight".to_owned(),
         };

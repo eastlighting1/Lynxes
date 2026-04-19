@@ -58,7 +58,11 @@ pub(crate) fn graph_info(graph: &GraphFrame) -> GraphInfo {
             self_loops += 1;
         }
         *edge_pairs
-            .entry((src.to_owned(), dst.to_owned(), typ_col.value(row).to_owned()))
+            .entry((
+                src.to_owned(),
+                dst.to_owned(),
+                typ_col.value(row).to_owned(),
+            ))
             .or_insert(0) += 1;
     }
     let multi_edge_pairs = edge_pairs.values().filter(|&&count| count > 1).count();
@@ -101,8 +105,16 @@ pub(crate) fn schema_summary(graph: &GraphFrame) -> SchemaSummary {
 
 pub(crate) fn attr_stats_summary(graph: &GraphFrame) -> AttrStatsSummary {
     AttrStatsSummary {
-        node_attrs: attr_stats_from_batch(graph.nodes().to_record_batch(), "node", &NODE_RESERVED_COLUMNS),
-        edge_attrs: attr_stats_from_batch(graph.edges().to_record_batch(), "edge", &EDGE_RESERVED_COLUMNS),
+        node_attrs: attr_stats_from_batch(
+            graph.nodes().to_record_batch(),
+            "node",
+            &NODE_RESERVED_COLUMNS,
+        ),
+        edge_attrs: attr_stats_from_batch(
+            graph.edges().to_record_batch(),
+            "edge",
+            &EDGE_RESERVED_COLUMNS,
+        ),
     }
 }
 
@@ -161,7 +173,11 @@ pub(crate) fn structure_stats(graph: &GraphFrame) -> crate::Result<StructureStat
 
 pub(crate) fn collect_node_labels(graph: &GraphFrame) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    let Some(column) = graph.nodes().to_record_batch().column_by_name(COL_NODE_LABEL) else {
+    let Some(column) = graph
+        .nodes()
+        .to_record_batch()
+        .column_by_name(COL_NODE_LABEL)
+    else {
         return out;
     };
     let labels = column
@@ -184,7 +200,8 @@ pub(crate) fn collect_node_labels(graph: &GraphFrame) -> BTreeSet<String> {
 }
 
 pub(crate) fn collect_edge_types(graph: &GraphFrame) -> BTreeSet<String> {
-    graph.edges()
+    graph
+        .edges()
         .edge_types()
         .into_iter()
         .map(str::to_owned)
@@ -221,7 +238,11 @@ pub(crate) fn isolated_node_ids(graph: &GraphFrame) -> Vec<String> {
 }
 
 fn directedness(graph: &GraphFrame) -> String {
-    let Some(direction_col) = graph.edges().to_record_batch().column_by_name(COL_EDGE_DIRECTION) else {
+    let Some(direction_col) = graph
+        .edges()
+        .to_record_batch()
+        .column_by_name(COL_EDGE_DIRECTION)
+    else {
         return "unknown".to_owned();
     };
     let direction_col = direction_col
@@ -246,10 +267,7 @@ fn directedness(graph: &GraphFrame) -> String {
     }
 }
 
-fn fields_summary(
-    fields: &[std::sync::Arc<Field>],
-    reserved: &[&str],
-) -> Vec<SchemaFieldSummary> {
+fn fields_summary(fields: &[std::sync::Arc<Field>], reserved: &[&str]) -> Vec<SchemaFieldSummary> {
     fields
         .iter()
         .map(|field| SchemaFieldSummary {

@@ -51,10 +51,7 @@ impl MockSparqlBackend {
 }
 
 impl SparqlBackend for MockSparqlBackend {
-    fn load_nodes<'a>(
-        &'a self,
-        query: SparqlQuery,
-    ) -> ConnectorFuture<'a, NodeFrame> {
+    fn load_nodes<'a>(&'a self, query: SparqlQuery) -> ConnectorFuture<'a, NodeFrame> {
         Box::pin(async move {
             self.node_queries.lock().unwrap().push(query);
             self.node_pages
@@ -67,10 +64,7 @@ impl SparqlBackend for MockSparqlBackend {
         })
     }
 
-    fn load_edges<'a>(
-        &'a self,
-        query: SparqlQuery,
-    ) -> ConnectorFuture<'a, EdgeFrame> {
+    fn load_edges<'a>(&'a self, query: SparqlQuery) -> ConnectorFuture<'a, EdgeFrame> {
         Box::pin(async move {
             self.edge_queries.lock().unwrap().push(query);
             self.edge_pages
@@ -83,10 +77,7 @@ impl SparqlBackend for MockSparqlBackend {
         })
     }
 
-    fn expand<'a>(
-        &'a self,
-        query: SparqlQuery,
-    ) -> ConnectorFuture<'a, ExpandResult> {
+    fn expand<'a>(&'a self, query: SparqlQuery) -> ConnectorFuture<'a, ExpandResult> {
         Box::pin(async move {
             self.expand_queries.lock().unwrap().push(query);
             self.expand_results

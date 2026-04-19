@@ -91,6 +91,7 @@ jobs:
         run: |
           uv run python tests/benchmark/bench_vs_networkx.py \
             --sizes ${{ matrix.size }} \
+            --reps 1 \
             --output ../bench-networkx-${{ matrix.size }}.md
         continue-on-error: true  # Don't fail CI if benchmark script exits non-zero
 
@@ -99,6 +100,7 @@ jobs:
         run: |
           uv run python tests/benchmark/bench_vs_igraph.py \
             --sizes ${{ matrix.size }} \
+            --reps 1 \
             --output ../bench-igraph-${{ matrix.size }}.md
         continue-on-error: true
 

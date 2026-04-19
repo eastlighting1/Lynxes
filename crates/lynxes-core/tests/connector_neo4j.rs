@@ -7,8 +7,8 @@ use std::{
 
 use arrow_array::BooleanArray;
 use lynxes_connect::{
-    Connector, ConnectorFuture, CypherQuery, CypherValue, ExpandResult, Neo4jBackend,
-    Neo4jConfig, Neo4jConnector,
+    Connector, ConnectorFuture, CypherQuery, CypherValue, ExpandResult, Neo4jBackend, Neo4jConfig,
+    Neo4jConnector,
 };
 use lynxes_core::{
     BinaryOp, Direction, EdgeFrame, EdgeTypeSpec, Expr, GFError, NodeFrame, ScalarValue,
@@ -51,10 +51,7 @@ impl MockNeo4jBackend {
 }
 
 impl Neo4jBackend for MockNeo4jBackend {
-    fn load_nodes<'a>(
-        &'a self,
-        query: CypherQuery,
-    ) -> ConnectorFuture<'a, NodeFrame> {
+    fn load_nodes<'a>(&'a self, query: CypherQuery) -> ConnectorFuture<'a, NodeFrame> {
         Box::pin(async move {
             self.node_queries.lock().unwrap().push(query);
             self.node_pages
@@ -67,10 +64,7 @@ impl Neo4jBackend for MockNeo4jBackend {
         })
     }
 
-    fn load_edges<'a>(
-        &'a self,
-        query: CypherQuery,
-    ) -> ConnectorFuture<'a, EdgeFrame> {
+    fn load_edges<'a>(&'a self, query: CypherQuery) -> ConnectorFuture<'a, EdgeFrame> {
         Box::pin(async move {
             self.edge_queries.lock().unwrap().push(query);
             self.edge_pages
@@ -83,10 +77,7 @@ impl Neo4jBackend for MockNeo4jBackend {
         })
     }
 
-    fn expand<'a>(
-        &'a self,
-        query: CypherQuery,
-    ) -> ConnectorFuture<'a, ExpandResult> {
+    fn expand<'a>(&'a self, query: CypherQuery) -> ConnectorFuture<'a, ExpandResult> {
         Box::pin(async move {
             self.expand_queries.lock().unwrap().push(query);
             self.expand_results
@@ -142,18 +133,9 @@ async fn neo4j_connector_pushes_down_nodes_and_paginates() {
         .text
         .contains("RETURN n.`_id` AS `_id`, labels(n) AS `_label`, n.`age` AS `age`"));
     assert!(queries[0].text.contains("SKIP $skip LIMIT $limit"));
-    assert_eq!(
-        queries[0].params.get("skip"),
-        Some(&CypherValue::Int(0))
-    );
-    assert_eq!(
-        queries[0].params.get("limit"),
-        Some(&CypherValue::Int(2))
-    );
-    assert_eq!(
-        queries[1].params.get("skip"),
-        Some(&CypherValue::Int(2))
-    );
+    assert_eq!(queries[0].params.get("skip"), Some(&CypherValue::Int(0)));
+    assert_eq!(queries[0].params.get("limit"), Some(&CypherValue::Int(2)));
+    assert_eq!(queries[1].params.get("skip"), Some(&CypherValue::Int(2)));
 }
 
 #[tokio::test]

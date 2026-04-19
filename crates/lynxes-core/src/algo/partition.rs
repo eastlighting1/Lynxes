@@ -36,8 +36,8 @@ use std::collections::{HashMap, HashSet};
 use arrow_array::{Array, StringArray};
 
 use crate::{
-    Direction, EdgeFrame, EdgeTypeSpec, GFError, GraphFrame, NodeFrame, Result,
-    COL_EDGE_DST, COL_EDGE_SRC,
+    Direction, EdgeFrame, EdgeTypeSpec, GFError, GraphFrame, NodeFrame, Result, COL_EDGE_DST,
+    COL_EDGE_SRC,
 };
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -94,10 +94,20 @@ impl PartitionedGraph {
         let edges_per_shard: Vec<usize> = self.shards.iter().map(|s| s.edge_count()).collect();
         let boundary_edge_count = self.boundary_edges.len();
         let total: usize = nodes_per_shard.iter().sum();
-        let avg = if self.n_shards == 0 { 0.0 } else { total as f64 / self.n_shards as f64 };
+        let avg = if self.n_shards == 0 {
+            0.0
+        } else {
+            total as f64 / self.n_shards as f64
+        };
         let max = nodes_per_shard.iter().copied().max().unwrap_or(0) as f64;
         let imbalance_ratio = if avg == 0.0 { 1.0 } else { max / avg };
-        PartitionStats { n_shards: self.n_shards, nodes_per_shard, edges_per_shard, boundary_edge_count, imbalance_ratio }
+        PartitionStats {
+            n_shards: self.n_shards,
+            nodes_per_shard,
+            edges_per_shard,
+            boundary_edge_count,
+            imbalance_ratio,
+        }
     }
 
     /// Merge all shards + boundary edges back into a single `GraphFrame`.
@@ -155,8 +165,7 @@ impl PartitionedGraph {
                     continue;
                 }
                 // Direct 1-hop expansion (avoids LazyGraphFrame dependency)
-                let new_ids =
-                    direct_expand(shard, &shard_seeds, edge_type, direction);
+                let new_ids = direct_expand(shard, &shard_seeds, edge_type, direction);
                 for id in new_ids {
                     if visited.insert(id.clone()) {
                         next_frontier.insert(id);
@@ -205,8 +214,8 @@ impl PartitionedGraph {
                 let shard_ids: Vec<&str> = visited_set
                     .iter()
                     .copied()
-                    .filter(|&id| self.shard_of(id).is_some() && {
-                        shard.nodes().row_index(id).is_some()
+                    .filter(|&id| {
+                        self.shard_of(id).is_some() && { shard.nodes().row_index(id).is_some() }
                     })
                     .collect();
                 if shard_ids.is_empty() {
@@ -217,13 +226,11 @@ impl PartitionedGraph {
                 }
             })
             .collect::<Result<Vec<_>>>()?;
-        let node_frame_refs: Vec<&NodeFrame> =
-            shard_subgraphs.iter().map(|g| g.nodes()).collect();
+        let node_frame_refs: Vec<&NodeFrame> = shard_subgraphs.iter().map(|g| g.nodes()).collect();
         let merged_nodes = NodeFrame::concat(&node_frame_refs)?;
 
         // Collect edges from shard subgraphs + filtered boundary
-        let edge_frame_refs: Vec<&EdgeFrame> =
-            shard_subgraphs.iter().map(|g| g.edges()).collect();
+        let edge_frame_refs: Vec<&EdgeFrame> = shard_subgraphs.iter().map(|g| g.edges()).collect();
         let boundary_mask: Vec<bool> = (0..self.boundary_edges.len())
             .map(|i| visited_boundary.contains(&i))
             .collect();
@@ -284,7 +291,9 @@ impl GraphPartitioner {
         let node_batch = graph.nodes().to_record_batch();
         let id_col = node_batch
             .column_by_name("_id")
-            .ok_or_else(|| GFError::ColumnNotFound { column: "_id".to_owned() })?;
+            .ok_or_else(|| GFError::ColumnNotFound {
+                column: "_id".to_owned(),
+            })?;
         let ids: &StringArray = id_col
             .as_any()
             .downcast_ref::<StringArray>()
@@ -301,9 +310,8 @@ impl GraphPartitioner {
             .collect();
 
         // Build per-shard NodeFrames via boolean masks
-        let mut shard_node_masks: Vec<Vec<bool>> = (0..n_shards)
-            .map(|_| vec![false; ids.len()])
-            .collect();
+        let mut shard_node_masks: Vec<Vec<bool>> =
+            (0..n_shards).map(|_| vec![false; ids.len()]).collect();
         for (row, &shard) in assignments.iter().enumerate() {
             shard_node_masks[shard][row] = true;
         }
@@ -312,21 +320,28 @@ impl GraphPartitioner {
         let edge_batch = graph.edges().to_record_batch();
         let src_col = edge_batch
             .column_by_name(COL_EDGE_SRC)
-            .ok_or_else(|| GFError::ColumnNotFound { column: COL_EDGE_SRC.to_owned() })?
+            .ok_or_else(|| GFError::ColumnNotFound {
+                column: COL_EDGE_SRC.to_owned(),
+            })?
             .as_any()
             .downcast_ref::<StringArray>()
-            .ok_or_else(|| GFError::TypeMismatch { message: "_src must be Utf8".to_owned() })?;
+            .ok_or_else(|| GFError::TypeMismatch {
+                message: "_src must be Utf8".to_owned(),
+            })?;
         let dst_col = edge_batch
             .column_by_name(COL_EDGE_DST)
-            .ok_or_else(|| GFError::ColumnNotFound { column: COL_EDGE_DST.to_owned() })?
+            .ok_or_else(|| GFError::ColumnNotFound {
+                column: COL_EDGE_DST.to_owned(),
+            })?
             .as_any()
             .downcast_ref::<StringArray>()
-            .ok_or_else(|| GFError::TypeMismatch { message: "_dst must be Utf8".to_owned() })?;
+            .ok_or_else(|| GFError::TypeMismatch {
+                message: "_dst must be Utf8".to_owned(),
+            })?;
 
         let edge_count = edge_batch.num_rows();
-        let mut shard_edge_masks: Vec<Vec<bool>> = (0..n_shards)
-            .map(|_| vec![false; edge_count])
-            .collect();
+        let mut shard_edge_masks: Vec<Vec<bool>> =
+            (0..n_shards).map(|_| vec![false; edge_count]).collect();
         let mut boundary_mask = vec![false; edge_count];
 
         for row in 0..edge_count {
@@ -354,7 +369,12 @@ impl GraphPartitioner {
         let boundary_bool = bool_vec_to_boolean_array(&boundary_mask);
         let boundary_edges = graph.edges().filter(&boundary_bool)?;
 
-        Ok(PartitionedGraph { shards, boundary_edges, n_shards, node_to_shard })
+        Ok(PartitionedGraph {
+            shards,
+            boundary_edges,
+            n_shards,
+            node_to_shard,
+        })
     }
 }
 
@@ -368,13 +388,17 @@ fn assign_nodes(
     method: PartitionMethod,
 ) -> Result<Vec<usize>> {
     match method {
-        PartitionMethod::Hash => {
-            Ok(ids.iter().map(|id| hash_shard(id.unwrap_or(""), n_shards)).collect())
-        }
+        PartitionMethod::Hash => Ok(ids
+            .iter()
+            .map(|id| hash_shard(id.unwrap_or(""), n_shards))
+            .collect()),
         PartitionMethod::Range => {
             // Sort IDs lexicographically, assign bands
-            let mut indexed: Vec<(usize, &str)> =
-                ids.iter().enumerate().map(|(i, id)| (i, id.unwrap_or(""))).collect();
+            let mut indexed: Vec<(usize, &str)> = ids
+                .iter()
+                .enumerate()
+                .map(|(i, id)| (i, id.unwrap_or("")))
+                .collect();
             indexed.sort_by_key(|&(_, id)| id);
             let mut result = vec![0usize; ids.len()];
             let band = (ids.len() + n_shards - 1) / n_shards.max(1);
@@ -412,7 +436,13 @@ fn assign_nodes(
                         .value(row)
                         .as_any()
                         .downcast_ref::<StringArray>()
-                        .and_then(|a| if a.is_empty() { None } else { Some(a.value(0).to_owned()) })
+                        .and_then(|a| {
+                            if a.is_empty() {
+                                None
+                            } else {
+                                Some(a.value(0).to_owned())
+                            }
+                        })
                         .unwrap_or_default();
                     *label_map.entry(first_label).or_insert_with(|| {
                         let s = next_shard % n_shards;
@@ -533,9 +563,7 @@ fn collect_reachable_edge_rows(
         let matches = match direction {
             Direction::Out => seed_set.contains(src),
             Direction::In => seed_set.contains(dst),
-            Direction::Both | Direction::None => {
-                seed_set.contains(src) || seed_set.contains(dst)
-            }
+            Direction::Both | Direction::None => seed_set.contains(src) || seed_set.contains(dst),
         };
         if matches && edge_type_matches(shard.edges(), row, edge_type) {
             visited_rows.insert(row);
@@ -701,7 +729,11 @@ mod tests {
         let g = bridge_graph();
         let pg = GraphPartitioner::by_hash(&g, 2).unwrap();
         let total: usize = pg.shards.iter().map(|s| s.node_count()).sum();
-        assert_eq!(total, g.node_count(), "all nodes must appear in exactly one shard");
+        assert_eq!(
+            total,
+            g.node_count(),
+            "all nodes must appear in exactly one shard"
+        );
     }
 
     #[test]
@@ -710,7 +742,11 @@ mod tests {
         let pg = GraphPartitioner::by_hash(&g, 2).unwrap();
         let intra: usize = pg.shards.iter().map(|s| s.edge_count()).sum();
         let boundary = pg.boundary_edges.len();
-        assert_eq!(intra + boundary, g.edge_count(), "intra + boundary must equal original");
+        assert_eq!(
+            intra + boundary,
+            g.edge_count(),
+            "intra + boundary must equal original"
+        );
     }
 
     #[test]
@@ -776,10 +812,15 @@ mod tests {
             .map(str::to_owned)
             .collect();
 
-        let expected_ids: HashSet<String> =
-            ["a", "b", "c", "d", "e"].into_iter().map(str::to_owned).collect();
+        let expected_ids: HashSet<String> = ["a", "b", "c", "d", "e"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
         for id in &expected_ids {
-            assert!(dist_ids.contains(id), "missing node {id} in distributed result");
+            assert!(
+                dist_ids.contains(id),
+                "missing node {id} in distributed result"
+            );
         }
         assert!(!dist_ids.contains("f"));
     }

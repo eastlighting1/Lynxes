@@ -15,14 +15,15 @@ Results are printed to stdout in a markdown table and appended to
 docs/benchmarks/bench_vs_igraph.md if that directory exists.
 """
 
-import sys
+import argparse
 import os
-import time
+import pathlib
 import random
 import statistics
+import sys
 import tempfile
-import pathlib
-from typing import Callable
+import time
+from collections.abc import Callable
 
 # ── dependency check ──────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ except ImportError:
 def barabasi_albert_gf(n: int, m: int = 3) -> gf.GraphFrame:
     """Generate a Barabasi-Albert scale-free graph as a GraphFrame."""
     rng = random.Random(42)
-    targets = list(range(m))
+    list(range(m))
     degree = [0] * n
     edges_src, edges_dst = [], []
 
@@ -66,11 +67,8 @@ def barabasi_albert_gf(n: int, m: int = 3) -> gf.GraphFrame:
             degree[new_node] += 1
             degree[t] += 1
 
-    gf_text_lines = [f'(n{i}: Node)' for i in range(n)]
-    gf_text_lines += [
-        f'n{s} -[EDGE]-> n{d}'
-        for s, d in zip(edges_src, edges_dst)
-    ]
+    gf_text_lines = [f"(n{i}: Node)" for i in range(n)]
+    gf_text_lines += [f"n{s} -[EDGE]-> n{d}" for s, d in zip(edges_src, edges_dst)]
     gf_text = "\n".join(gf_text_lines) + "\n"
 
     with tempfile.NamedTemporaryFile(suffix=".gf", mode="w", delete=False, encoding="utf-8") as f:
@@ -89,13 +87,14 @@ def barabasi_albert_igraph(n: int, m: int = 3) -> ig.Graph:
 
 # ── timing helpers ────────────────────────────────────────────────────────────
 
-REPS = 3  # repetitions per benchmark cell
+REPS = 3  # default repetitions per cell; overridden at runtime by --reps
 
 
-def time_fn(fn: Callable, reps: int = REPS) -> float:
+def time_fn(fn: Callable, reps: int | None = None) -> float:
     """Return median wall-clock time (seconds) over `reps` calls."""
+    n = REPS if reps is None else reps
     times = []
-    for _ in range(reps):
+    for _ in range(n):
         t0 = time.perf_counter()
         fn()
         times.append(time.perf_counter() - t0)
@@ -151,7 +150,8 @@ def bench_cc_igraph(g: ig.Graph) -> float:
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-SIZES = [1_000, 10_000, 100_000]
+_DEFAULT_SIZES = [1_000, 10_000, 100_000]
+_DEFAULT_REPS = 3
 
 
 def fmt(seconds: float) -> str:
@@ -166,43 +166,80 @@ def speedup(gf_t: float, ig_t: float) -> str:
     if gf_t == 0:
         return "∞×"
     ratio = ig_t / gf_t
-    return f"{ratio:.1f}×" if ratio >= 1 else f"1/{1/ratio:.1f}×"
+    return f"{ratio:.1f}×" if ratio >= 1 else f"1/{1 / ratio:.1f}×"
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Lynxes vs igraph benchmark")
+    p.add_argument(
+        "--sizes",
+        nargs="+",
+        type=int,
+        default=_DEFAULT_SIZES,
+        metavar="N",
+        help="graph sizes to benchmark (default: 1000 10000 100000)",
+    )
+    p.add_argument(
+        "--output",
+        type=pathlib.Path,
+        default=None,
+        metavar="FILE",
+        help="write markdown results to FILE instead of the default docs path",
+    )
+    p.add_argument(
+        "--reps",
+        type=int,
+        default=_DEFAULT_REPS,
+        metavar="R",
+        help="repetitions per benchmark cell (default: 3)",
+    )
+    return p.parse_args()
 
 
 def main():
+    args = _parse_args()
+    sizes = args.sizes
+    global REPS  # noqa: PLW0603
+    REPS = args.reps
+
     rows = []
-    header = ("N", "Op", "Graphframe", "igraph", "Speedup (GF/IG)")
     print()
     print(f"{'N':>8}  {'Operation':<30}  {'Graphframe':>12}  {'igraph':>12}  {'Speedup':>10}")
     print("-" * 82)
 
-    for n in SIZES:
+    for n in sizes:
         print(f"  Building graphs n={n:,} ...", end="", flush=True)
         graph_gf = barabasi_albert_gf(n)
-        graph_ig  = barabasi_albert_igraph(n)
+        graph_ig = barabasi_albert_igraph(n)
         print(" done")
 
         ops = [
-            ("2-hop BFS expand", bench_expand_gf,    bench_expand_igraph),
-            ("PageRank",         bench_pagerank_gf,  bench_pagerank_igraph),
-            ("Connected Comps.", bench_cc_gf,        bench_cc_igraph),
+            ("2-hop BFS expand", bench_expand_gf, bench_expand_igraph),
+            ("PageRank", bench_pagerank_gf, bench_pagerank_igraph),
+            ("Connected Comps.", bench_cc_gf, bench_cc_igraph),
         ]
 
         for op_name, gf_fn, ig_fn in ops:
             t_gf = gf_fn(graph_gf)
             t_ig = ig_fn(graph_ig)
-            sp   = speedup(t_gf, t_ig)
+            sp = speedup(t_gf, t_ig)
             print(f"{n:>8,}  {op_name:<30}  {fmt(t_gf):>12}  {fmt(t_ig):>12}  {sp:>10}")
             rows.append((n, op_name, t_gf, t_ig))
 
-    # ── optional: write to docs/benchmarks/ ──────────────────────────────────
-    out_dir = pathlib.Path(__file__).parents[2] / "docs" / "benchmarks"
-    if out_dir.exists():
+    # ── optional: write markdown output ──────────────────────────────────────
+    if args.output is not None:
+        out_path = args.output
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        should_write = True
+    else:
+        out_dir = pathlib.Path(__file__).parents[2] / "docs" / "benchmarks"
         out_path = out_dir / "bench_vs_igraph.md"
+        should_write = out_dir.exists()
+    if should_write:
         lines = [
             "# Graphframe vs igraph Benchmark (TST-011)\n",
             f"| {'N':>8} | {'Operation':<30} | {'Graphframe':>12} | {'igraph':>12} | {'Speedup':>10} |\n",
-            f"|{'-'*10}|{'-'*32}|{'-'*14}|{'-'*14}|{'-'*12}|\n",
+            f"|{'-' * 10}|{'-' * 32}|{'-' * 14}|{'-' * 14}|{'-' * 12}|\n",
         ]
         for n, op, t_gf, t_ig in rows:
             lines.append(

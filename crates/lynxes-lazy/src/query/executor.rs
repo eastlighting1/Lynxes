@@ -11,8 +11,8 @@ use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use hashbrown::HashSet;
 
 use lynxes_core::{
-    Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, Result, COL_EDGE_DIRECTION,
-    COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE,
+    Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, Result, COL_EDGE_DIRECTION, COL_EDGE_DST,
+    COL_EDGE_SRC, COL_EDGE_TYPE,
 };
 use lynxes_plan::{
     AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan, PatternStep, ScalarValue,
@@ -412,7 +412,9 @@ fn expand_graph_raw(
                         if !matches_edge_type(graph.edges().edge_type_at(e_row), edge_type) {
                             continue;
                         }
-                        let Some(candidate) = edge_node_ids.get(n_local as usize).map(String::as_str) else {
+                        let Some(candidate) =
+                            edge_node_ids.get(n_local as usize).map(String::as_str)
+                        else {
                             continue;
                         };
                         if candidate_passes_pre_filter(graph.nodes(), candidate, pre_filter)? {
@@ -440,7 +442,9 @@ fn expand_graph_raw(
                         if !matches_edge_type(graph.edges().edge_type_at(e_row), edge_type) {
                             continue;
                         }
-                        let Some(candidate) = edge_node_ids.get(n_local as usize).map(String::as_str) else {
+                        let Some(candidate) =
+                            edge_node_ids.get(n_local as usize).map(String::as_str)
+                        else {
                             continue;
                         };
                         if candidate_passes_pre_filter(graph.nodes(), candidate, pre_filter)? {
@@ -466,7 +470,9 @@ fn expand_graph_raw(
                         if !matches_edge_type(graph.edges().edge_type_at(e_row), edge_type) {
                             continue;
                         }
-                        let Some(candidate) = edge_node_ids.get(n_local as usize).map(String::as_str) else {
+                        let Some(candidate) =
+                            edge_node_ids.get(n_local as usize).map(String::as_str)
+                        else {
                             continue;
                         };
                         if candidate_passes_pre_filter(graph.nodes(), candidate, pre_filter)? {
@@ -489,7 +495,9 @@ fn expand_graph_raw(
                         if !matches_edge_type(graph.edges().edge_type_at(e_row), edge_type) {
                             continue;
                         }
-                        let Some(candidate) = edge_node_ids.get(n_local as usize).map(String::as_str) else {
+                        let Some(candidate) =
+                            edge_node_ids.get(n_local as usize).map(String::as_str)
+                        else {
                             continue;
                         };
                         if candidate_passes_pre_filter(graph.nodes(), candidate, pre_filter)? {
@@ -1746,7 +1754,9 @@ mod tests {
         ArrayRef, Int64Array, Int8Array,
     };
     use arrow_schema::{DataType, Field, Schema as ArrowSchema};
-    use lynxes_core::{Direction, EdgeTypeSpec, PatternStep, COL_EDGE_SRC, COL_NODE_ID, COL_NODE_LABEL};
+    use lynxes_core::{
+        Direction, EdgeTypeSpec, PatternStep, COL_EDGE_SRC, COL_NODE_ID, COL_NODE_LABEL,
+    };
     use lynxes_plan::{Connector, PartitionStrategy};
 
     fn labels_array(values: &[&[&str]]) -> ListArray {
@@ -2072,7 +2082,10 @@ mod tests {
         };
 
         // Column must be named "friend_count", not "count".
-        assert!(nodes.column("count").is_none(), "bare 'count' column should not exist");
+        assert!(
+            nodes.column("count").is_none(),
+            "bare 'count' column should not exist"
+        );
         let counts = nodes
             .column("friend_count")
             .expect("alias column 'friend_count' must exist")

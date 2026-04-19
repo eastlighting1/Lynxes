@@ -13,8 +13,7 @@ pub use crate::algo::centrality::BetweennessConfig;
 pub use crate::algo::community::{CommunityAlgorithm, CommunityConfig};
 pub use crate::algo::pagerank::PageRankConfig;
 pub use crate::algo::partition::{
-    GraphPartitioner, PartitionMethod as GraphPartitionMethod, PartitionStats,
-    PartitionedGraph,
+    GraphPartitioner, PartitionMethod as GraphPartitionMethod, PartitionStats, PartitionedGraph,
 };
 pub use crate::algo::shortest_path::ShortestPathConfig;
 pub use crate::algo::traversal::{bfs, BfsConfig};
@@ -26,13 +25,13 @@ pub use crate::display::{
 };
 pub use crate::error::{GFError, Result, SchemaValidationError};
 pub use crate::frame::{CsrIndex, EdgeFrame, GraphFrame, NodeFrame};
-pub use crate::query::{
-    AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan,
-    PartitionStrategy, Pattern, PatternStep, PlanDomain, ScalarValue, StringOp, UnaryOp,
-};
 pub use crate::query::optimizer::{
     EarlyTermination, Optimizer, OptimizerOptions, OptimizerPass, PartitionParallel,
     PredicatePushdown, ProjectionPushdown, SubgraphCaching, TraversalPruning,
+};
+pub use crate::query::{
+    AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan, PartitionStrategy, Pattern,
+    PatternStep, PlanDomain, ScalarValue, StringOp, UnaryOp,
 };
 pub use crate::schema::{EdgeSchema, FieldDef, GFType, GFValue, NodeSchema, Schema};
 pub use crate::types::{

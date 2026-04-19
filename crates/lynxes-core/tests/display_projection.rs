@@ -99,8 +99,14 @@ fn display_schema_reports_reserved_and_user_fields() {
     let graph = sample_graph();
     let schema = graph.display_schema();
 
-    assert!(schema.node_fields.iter().any(|field| field.name == "_id" && field.reserved));
-    assert!(schema.edge_fields.iter().any(|field| field.name == "since" && !field.reserved));
+    assert!(schema
+        .node_fields
+        .iter()
+        .any(|field| field.name == "_id" && field.reserved));
+    assert!(schema
+        .edge_fields
+        .iter()
+        .any(|field| field.name == "since" && !field.reserved));
 }
 
 #[test]
@@ -108,15 +114,23 @@ fn display_attr_stats_reports_distinct_counts() {
     let graph = sample_graph();
     let stats = graph.display_attr_stats();
 
-    assert!(stats.node_attrs.iter().any(|stat| stat.qualified_name == "node.age"));
-    assert!(stats.edge_attrs.iter().any(|stat| stat.qualified_name == "edge.since"));
+    assert!(stats
+        .node_attrs
+        .iter()
+        .any(|stat| stat.qualified_name == "node.age"));
     assert!(stats
         .edge_attrs
         .iter()
-        .find(|stat| stat.qualified_name == "edge.since")
-        .unwrap()
-        .distinct_count
-        >= 4);
+        .any(|stat| stat.qualified_name == "edge.since"));
+    assert!(
+        stats
+            .edge_attrs
+            .iter()
+            .find(|stat| stat.qualified_name == "edge.since")
+            .unwrap()
+            .distinct_count
+            >= 4
+    );
 }
 
 #[test]

@@ -7,8 +7,7 @@ use parquet::arrow::ProjectionMask;
 use parquet::file::properties::WriterProperties;
 
 use lynxes_core::{
-    EdgeFrame, GFError, GraphFrame, NodeFrame, Result, EDGE_RESERVED_COLUMNS,
-    NODE_RESERVED_COLUMNS,
+    EdgeFrame, GFError, GraphFrame, NodeFrame, Result, EDGE_RESERVED_COLUMNS, NODE_RESERVED_COLUMNS,
 };
 
 #[derive(Debug, Clone, Default)]

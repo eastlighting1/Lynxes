@@ -4,7 +4,9 @@ use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
 
-use lynxes_core::{Direction, EdgeSchema, FieldDef, GFError, GFType, GFValue, NodeSchema, Result, Schema};
+use lynxes_core::{
+    Direction, EdgeSchema, FieldDef, GFError, GFType, GFValue, NodeSchema, Result, Schema,
+};
 
 #[derive(Parser)]
 #[grammar = "io/graphframe.pest"]

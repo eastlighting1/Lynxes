@@ -5,7 +5,10 @@ use arrow_array::{
     ArrayRef, Int64Array, Int8Array, ListArray, RecordBatch, StringArray,
 };
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
-use lynxes_core::{Direction, EdgeFrame, GraphFrame, NodeFrame, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL};
+use lynxes_core::{
+    Direction, EdgeFrame, GraphFrame, NodeFrame, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC,
+    COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
+};
 use lynxes_io::{read_gfb, read_gfb_inspect, write_gfb, GfbWriteOptions};
 
 fn labels_array(values: &[&[&str]]) -> ListArray {

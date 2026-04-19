@@ -180,7 +180,8 @@ impl Connector for BackendConnectorAdapter {
         predicate: Option<&'a Expr>,
         batch_size: usize,
     ) -> lynxes_core::ConnectorFuture<'a, NodeFrame> {
-        self.inner.load_nodes(labels, columns, predicate, batch_size)
+        self.inner
+            .load_nodes(labels, columns, predicate, batch_size)
     }
 
     fn load_edges<'a>(
@@ -284,13 +285,19 @@ impl PyNodeFrame {
 
     /// Return rows whose `_id` appears in *both* `self` and `other`.
     fn intersect(&self, other: PyRef<'_, PyNodeFrame>) -> PyResult<Self> {
-        let result = self.inner.intersect(&other.inner).map_err(gf_error_to_py_err)?;
+        let result = self
+            .inner
+            .intersect(&other.inner)
+            .map_err(gf_error_to_py_err)?;
         Ok(Self::new(result))
     }
 
     /// Return rows whose `_id` is in `self` but **not** in `other`.
     fn difference(&self, other: PyRef<'_, PyNodeFrame>) -> PyResult<Self> {
-        let result = self.inner.difference(&other.inner).map_err(gf_error_to_py_err)?;
+        let result = self
+            .inner
+            .difference(&other.inner)
+            .map_err(gf_error_to_py_err)?;
         Ok(Self::new(result))
     }
 
@@ -716,8 +723,12 @@ impl PyGraphFrame {
 
     fn write_gfb(&self, path: &Bound<'_, PyAny>) -> PyResult<()> {
         let path = path_from_py_any(path)?;
-        write_gfb(self.inner.as_ref(), path, &lynxes_io::GfbWriteOptions::default())
-            .map_err(gf_error_to_py_err)
+        write_gfb(
+            self.inner.as_ref(),
+            path,
+            &lynxes_io::GfbWriteOptions::default(),
+        )
+        .map_err(gf_error_to_py_err)
     }
 
     fn write_parquet_graph(
@@ -727,8 +738,7 @@ impl PyGraphFrame {
     ) -> PyResult<()> {
         let nodes_path = path_from_py_any(nodes_path)?;
         let edges_path = path_from_py_any(edges_path)?;
-        write_parquet_graph(self.inner.as_ref(), nodes_path, edges_path)
-            .map_err(gf_error_to_py_err)
+        write_parquet_graph(self.inner.as_ref(), nodes_path, edges_path).map_err(gf_error_to_py_err)
     }
 
     fn write_rdf(&self, path: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -852,7 +862,9 @@ impl PyLazyGraphFrame {
     ) -> PyResult<Self> {
         let pattern = pattern_from_py_steps(steps)?;
         let where_expr = where_.map(|e| e.inner.clone());
-        Ok(Self::new(self.inner.clone().match_pattern(pattern, where_expr)))
+        Ok(Self::new(
+            self.inner.clone().match_pattern(pattern, where_expr),
+        ))
     }
 
     #[pyo3(signature = (by, descending=false))]
@@ -982,7 +994,9 @@ impl PyExpr {
     /// ```
     #[getter]
     fn str(&self) -> PyStrExprNamespace {
-        PyStrExprNamespace { inner: self.inner.clone() }
+        PyStrExprNamespace {
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -1072,7 +1086,8 @@ impl PyPartitionedGraph {
         d.set_item("n_shards", s.n_shards).unwrap();
         d.set_item("nodes_per_shard", s.nodes_per_shard).unwrap();
         d.set_item("edges_per_shard", s.edges_per_shard).unwrap();
-        d.set_item("boundary_edge_count", s.boundary_edge_count).unwrap();
+        d.set_item("boundary_edge_count", s.boundary_edge_count)
+            .unwrap();
         d.set_item("imbalance_ratio", s.imbalance_ratio).unwrap();
         d
     }
@@ -1108,7 +1123,10 @@ impl PyPartitionedGraph {
         let ef_node_ids: Vec<String> = nf.id_column().iter().flatten().map(str::to_owned).collect();
         Ok((
             PyNodeFrame::new(nf),
-            PyEdgeFrame { inner: std::sync::Arc::new(ef), node_ids: std::sync::Arc::new(ef_node_ids) },
+            PyEdgeFrame {
+                inner: std::sync::Arc::new(ef),
+                node_ids: std::sync::Arc::new(ef_node_ids),
+            },
         ))
     }
 }
@@ -1315,8 +1333,12 @@ fn write_gf(graph: PyRef<'_, PyGraphFrame>, path: &Bound<'_, PyAny>) -> PyResult
 #[pyfunction]
 fn write_gfb_py(graph: PyRef<'_, PyGraphFrame>, path: &Bound<'_, PyAny>) -> PyResult<()> {
     let path = path_from_py_any(path)?;
-    write_gfb(graph.inner.as_ref(), path, &lynxes_io::GfbWriteOptions::default())
-        .map_err(gf_error_to_py_err)
+    write_gfb(
+        graph.inner.as_ref(),
+        path,
+        &lynxes_io::GfbWriteOptions::default(),
+    )
+    .map_err(gf_error_to_py_err)
 }
 
 #[pyfunction]
@@ -1327,8 +1349,7 @@ fn write_parquet_graph_py(
 ) -> PyResult<()> {
     let nodes_path = path_from_py_any(nodes_path)?;
     let edges_path = path_from_py_any(edges_path)?;
-    write_parquet_graph(graph.inner.as_ref(), nodes_path, edges_path)
-        .map_err(gf_error_to_py_err)
+    write_parquet_graph(graph.inner.as_ref(), nodes_path, edges_path).map_err(gf_error_to_py_err)
 }
 
 /// Create a lazy graph frame backed by a Neo4j database.
@@ -1343,12 +1364,7 @@ fn write_parquet_graph_py(
 /// ```
 #[pyfunction]
 #[pyo3(signature = (uri, user, password, database=None))]
-fn read_neo4j(
-    uri: &str,
-    user: &str,
-    password: &str,
-    database: Option<&str>,
-) -> PyLazyGraphFrame {
+fn read_neo4j(uri: &str, user: &str, password: &str, database: Option<&str>) -> PyLazyGraphFrame {
     let config = Neo4jConfig {
         uri: uri.to_owned(),
         user: user.to_owned(),
@@ -1357,8 +1373,9 @@ fn read_neo4j(
     };
     let connector_impl: std::sync::Arc<dyn BackendConnector> =
         std::sync::Arc::new(Neo4jConnector::new(config));
-    let connector: std::sync::Arc<dyn Connector> =
-        std::sync::Arc::new(BackendConnectorAdapter { inner: connector_impl });
+    let connector: std::sync::Arc<dyn Connector> = std::sync::Arc::new(BackendConnectorAdapter {
+        inner: connector_impl,
+    });
     PyLazyGraphFrame {
         inner: LazyGraphFrame::from_connector(connector),
     }
@@ -1399,8 +1416,9 @@ fn read_arangodb(
     };
     let connector_impl: std::sync::Arc<dyn BackendConnector> =
         std::sync::Arc::new(ArangoConnector::new(config));
-    let connector: std::sync::Arc<dyn Connector> =
-        std::sync::Arc::new(BackendConnectorAdapter { inner: connector_impl });
+    let connector: std::sync::Arc<dyn Connector> = std::sync::Arc::new(BackendConnectorAdapter {
+        inner: connector_impl,
+    });
     PyLazyGraphFrame {
         inner: LazyGraphFrame::from_connector(connector),
     }
@@ -1431,8 +1449,9 @@ fn read_sparql(
     };
     let connector_impl: std::sync::Arc<dyn BackendConnector> =
         std::sync::Arc::new(SparqlConnector::new(config));
-    let connector: std::sync::Arc<dyn Connector> =
-        std::sync::Arc::new(BackendConnectorAdapter { inner: connector_impl });
+    let connector: std::sync::Arc<dyn Connector> = std::sync::Arc::new(BackendConnectorAdapter {
+        inner: connector_impl,
+    });
     PyLazyGraphFrame {
         inner: LazyGraphFrame::from_connector(connector),
     }
@@ -1573,12 +1592,16 @@ fn push_display_row(
     columns: &[lynxes_core::DisplayColumn],
     widths: &[usize],
 ) {
-    for ((column, width), value) in columns
-        .iter()
-        .zip(widths.iter().copied())
-        .zip(columns.iter().map(|column| values.get(&column.name).cloned().unwrap_or_default()))
-    {
-        out.push_str(&format!("{:<width$} ", value, width = width.max(column.name.len())));
+    for ((column, width), value) in columns.iter().zip(widths.iter().copied()).zip(
+        columns
+            .iter()
+            .map(|column| values.get(&column.name).cloned().unwrap_or_default()),
+    ) {
+        out.push_str(&format!(
+            "{:<width$} ",
+            value,
+            width = width.max(column.name.len())
+        ));
     }
     out.push('\n');
 }
@@ -1642,7 +1665,11 @@ fn render_python_schema(schema: &SchemaSummary) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "Schema ({})\n",
-        if schema.declared { "declared" } else { "observed" }
+        if schema.declared {
+            "declared"
+        } else {
+            "observed"
+        }
     ));
     out.push_str(&format!(
         "Node labels: {}\n",
@@ -1666,7 +1693,11 @@ fn render_python_schema(schema: &SchemaSummary) -> String {
             "  {:<14} {:<18} {:<8} {}\n",
             field.name,
             field.dtype,
-            if field.nullable { "nullable" } else { "required" },
+            if field.nullable {
+                "nullable"
+            } else {
+                "required"
+            },
             if field.reserved { "reserved" } else { "user" }
         ));
     }
@@ -1676,7 +1707,11 @@ fn render_python_schema(schema: &SchemaSummary) -> String {
             "  {:<14} {:<18} {:<8} {}\n",
             field.name,
             field.dtype,
-            if field.nullable { "nullable" } else { "required" },
+            if field.nullable {
+                "nullable"
+            } else {
+                "required"
+            },
             if field.reserved { "reserved" } else { "user" }
         ));
     }
@@ -1685,7 +1720,10 @@ fn render_python_schema(schema: &SchemaSummary) -> String {
 
 fn render_python_glimpse(glimpse: &GlimpseSummary) -> String {
     let mut out = String::new();
-    out.push_str(&format!("Glimpse (rows sampled: {})\n", glimpse.rows_sampled));
+    out.push_str(&format!(
+        "Glimpse (rows sampled: {})\n",
+        glimpse.rows_sampled
+    ));
     for column in &glimpse.columns {
         out.push_str(&format!(
             "  {:<12} {:<18} {}\n",
@@ -1715,7 +1753,9 @@ fn describe_graph(graph: &GraphFrame, mode: &str) -> PyResult<String> {
         "types" => Ok(render_describe_types(&graph.display_schema())),
         "attrs" => Ok(render_describe_attrs(&graph.display_attr_stats())),
         "structure" => Ok(render_describe_structure(
-            &graph.display_structure_stats().map_err(gf_error_to_py_err)?,
+            &graph
+                .display_structure_stats()
+                .map_err(gf_error_to_py_err)?,
         )),
         other => Err(PyValueError::new_err(format!(
             "unsupported describe mode: {other}; expected one of: all, types, attrs, structure"

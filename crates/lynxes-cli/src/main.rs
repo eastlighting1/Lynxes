@@ -648,10 +648,16 @@ fn print_query_view(graph: &GraphFrame, render: &QueryRenderOptions) -> Result<(
 
 fn print_summary(info: &GraphInfo) {
     println!();
-    println!("Projected rows: {:>5}", fmt_count(info.summary.projected_row_count));
+    println!(
+        "Projected rows: {:>5}",
+        fmt_count(info.summary.projected_row_count)
+    );
     println!("Nodes:          {:>5}", fmt_count(info.summary.node_count));
     println!("Edges:          {:>5}", fmt_count(info.summary.edge_count));
-    println!("Isolated:       {:>5}", fmt_count(info.summary.isolated_node_count));
+    println!(
+        "Isolated:       {:>5}",
+        fmt_count(info.summary.isolated_node_count)
+    );
     println!("Directedness:   {}", info.summary.directedness);
     println!();
     print_tag_list("Labels", &info.node_labels);
@@ -685,18 +691,35 @@ fn render_display_slice(slice: &DisplaySlice, ascii: bool) -> String {
         .iter()
         .map(|column| column.name.as_str())
         .collect::<Vec<_>>();
-    out.push_str(&table_border(&border, &widths, border.top_left, border.top_mid, border.top_right));
+    out.push_str(&table_border(
+        &border,
+        &widths,
+        border.top_left,
+        border.top_mid,
+        border.top_right,
+    ));
     out.push('\n');
     out.push_str(&table_row(&border, &widths, &header_cells));
     out.push('\n');
-    out.push_str(&table_border(&border, &widths, border.mid_left, border.mid_mid, border.mid_right));
+    out.push_str(&table_border(
+        &border,
+        &widths,
+        border.mid_left,
+        border.mid_mid,
+        border.mid_right,
+    ));
     out.push('\n');
 
     for row in &slice.top_rows {
         let cells = slice
             .columns
             .iter()
-            .map(|column| row.values.get(&column.name).map(String::as_str).unwrap_or(""))
+            .map(|column| {
+                row.values
+                    .get(&column.name)
+                    .map(String::as_str)
+                    .unwrap_or("")
+            })
             .collect::<Vec<_>>();
         out.push_str(&table_row(&border, &widths, &cells));
         out.push('\n');
@@ -712,7 +735,12 @@ fn render_display_slice(slice: &DisplaySlice, ascii: bool) -> String {
         let cells = slice
             .columns
             .iter()
-            .map(|column| row.values.get(&column.name).map(String::as_str).unwrap_or(""))
+            .map(|column| {
+                row.values
+                    .get(&column.name)
+                    .map(String::as_str)
+                    .unwrap_or("")
+            })
             .collect::<Vec<_>>();
         out.push_str(&table_row(&border, &widths, &cells));
         out.push('\n');
@@ -732,8 +760,18 @@ fn render_display_slice(slice: &DisplaySlice, ascii: bool) -> String {
 fn render_info(info: &GraphInfo) -> String {
     let mut out = String::new();
     writeln!(out, "Graph info").unwrap();
-    writeln!(out, "  nodes:          {}", fmt_count(info.summary.node_count)).unwrap();
-    writeln!(out, "  edges:          {}", fmt_count(info.summary.edge_count)).unwrap();
+    writeln!(
+        out,
+        "  nodes:          {}",
+        fmt_count(info.summary.node_count)
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "  edges:          {}",
+        fmt_count(info.summary.edge_count)
+    )
+    .unwrap();
     writeln!(
         out,
         "  isolated nodes: {}",
@@ -748,7 +786,16 @@ fn render_info(info: &GraphInfo) -> String {
         fmt_count(info.multi_edge_pairs)
     )
     .unwrap();
-    writeln!(out, "  schema:         {}", if info.schema_present { "declared" } else { "observed" }).unwrap();
+    writeln!(
+        out,
+        "  schema:         {}",
+        if info.schema_present {
+            "declared"
+        } else {
+            "observed"
+        }
+    )
+    .unwrap();
     writeln!(out).unwrap();
     writeln!(out, "Node labels: {}", info.node_labels.join(", ")).unwrap();
     writeln!(out, "Edge types:  {}", info.edge_types.join(", ")).unwrap();
@@ -780,7 +827,11 @@ fn render_schema(schema: &SchemaSummary) -> String {
     writeln!(
         out,
         "Schema ({})",
-        if schema.declared { "declared" } else { "observed" }
+        if schema.declared {
+            "declared"
+        } else {
+            "observed"
+        }
     )
     .unwrap();
     writeln!(out, "Node labels: {}", schema.node_labels.join(", ")).unwrap();
@@ -793,7 +844,11 @@ fn render_schema(schema: &SchemaSummary) -> String {
             "  {:<14} {:<18} {:<8} {}",
             field.name,
             field.dtype,
-            if field.nullable { "nullable" } else { "required" },
+            if field.nullable {
+                "nullable"
+            } else {
+                "required"
+            },
             if field.reserved { "reserved" } else { "user" }
         )
         .unwrap();
@@ -806,7 +861,11 @@ fn render_schema(schema: &SchemaSummary) -> String {
             "  {:<14} {:<18} {:<8} {}",
             field.name,
             field.dtype,
-            if field.nullable { "nullable" } else { "required" },
+            if field.nullable {
+                "nullable"
+            } else {
+                "required"
+            },
             if field.reserved { "reserved" } else { "user" }
         )
         .unwrap();
@@ -816,7 +875,12 @@ fn render_schema(schema: &SchemaSummary) -> String {
 
 fn render_glimpse(glimpse: &GlimpseSummary) -> String {
     let mut out = String::new();
-    writeln!(out, "Glimpse (rows sampled: {})", fmt_count(glimpse.rows_sampled)).unwrap();
+    writeln!(
+        out,
+        "Glimpse (rows sampled: {})",
+        fmt_count(glimpse.rows_sampled)
+    )
+    .unwrap();
     for column in &glimpse.columns {
         writeln!(
             out,
@@ -847,9 +911,9 @@ fn render_describe(graph: &GraphFrame, mode: &DescribeModeArg) -> Result<String>
         }
         DescribeModeArg::Types => Ok(render_describe_types(&graph.display_schema())),
         DescribeModeArg::Attrs => Ok(render_describe_attrs(&graph.display_attr_stats())),
-        DescribeModeArg::Structure => Ok(render_describe_structure(
-            &graph.display_structure_stats()?,
-        )),
+        DescribeModeArg::Structure => {
+            Ok(render_describe_structure(&graph.display_structure_stats()?))
+        }
     }
 }
 
@@ -937,7 +1001,12 @@ fn render_describe_structure(stats: &StructureStats) -> String {
     writeln!(out, "  average in-degree: {:.2}", stats.average_in_degree).unwrap();
     writeln!(out, "  median degree: {:.2}", stats.median_degree).unwrap();
     writeln!(out, "  max degree: {}", stats.max_degree).unwrap();
-    writeln!(out, "  connected components: {}", stats.connected_components).unwrap();
+    writeln!(
+        out,
+        "  connected components: {}",
+        stats.connected_components
+    )
+    .unwrap();
     writeln!(
         out,
         "  largest component share: {:.2}%",
@@ -1640,9 +1709,11 @@ mod tests {
                     Field::new("age", DataType::Int64, true),
                 ])),
                 vec![
-                    Arc::new(StringArray::from(vec!["alice", "acme"])) as Arc<dyn arrow_array::Array>,
+                    Arc::new(StringArray::from(vec!["alice", "acme"]))
+                        as Arc<dyn arrow_array::Array>,
                     Arc::new(lb.finish()) as Arc<dyn arrow_array::Array>,
-                    Arc::new(Int64Array::from(vec![Some(30), Some(100)])) as Arc<dyn arrow_array::Array>,
+                    Arc::new(Int64Array::from(vec![Some(30), Some(100)]))
+                        as Arc<dyn arrow_array::Array>,
                 ],
             )
             .unwrap(),

@@ -114,10 +114,7 @@ async fn gf_connector_reads_gfb_and_writes_gfb() {
     let output = temp_path("connector-roundtrip-output.gfb");
     fs::write(&input, SAMPLE_GF).unwrap();
 
-    let source_graph = parse_gf(SAMPLE_GF)
-        .unwrap()
-        .to_graph_frame()
-        .unwrap();
+    let source_graph = parse_gf(SAMPLE_GF).unwrap().to_graph_frame().unwrap();
     write_gfb(&source_graph, &output, &GfbWriteOptions::default()).unwrap();
 
     let connector = GFConnector::new(&output).unwrap();
@@ -146,10 +143,7 @@ async fn gf_connector_reads_gfb_and_writes_gfb() {
 async fn gf_connector_rejects_non_gfb_write_targets() {
     let target = temp_path("connector-write-target.gf");
     let connector = GFConnector::from_gf(&target);
-    let graph = parse_gf(SAMPLE_GF)
-        .unwrap()
-        .to_graph_frame()
-        .unwrap();
+    let graph = parse_gf(SAMPLE_GF).unwrap().to_graph_frame().unwrap();
 
     let err = connector.write(&graph).await.unwrap_err();
     assert!(matches!(err, GFError::UnsupportedOperation { .. }));

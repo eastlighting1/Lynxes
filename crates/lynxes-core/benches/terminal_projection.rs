@@ -14,7 +14,9 @@ fn make_projection_graph(nodes: usize, edges: usize) -> GraphFrame {
     let mut labels = ListBuilder::new(StringBuilder::new());
     let ages: Vec<Option<i64>> = (0..nodes).map(|idx| Some((idx % 97) as i64)).collect();
     for idx in 0..nodes {
-        labels.values().append_value(if idx % 10 == 0 { "Company" } else { "Person" });
+        labels
+            .values()
+            .append_value(if idx % 10 == 0 { "Company" } else { "Person" });
         labels.append(true);
     }
     let node_batch = RecordBatch::try_new(
@@ -36,11 +38,15 @@ fn make_projection_graph(nodes: usize, edges: usize) -> GraphFrame {
     .unwrap();
 
     let srcs: Vec<String> = (0..edges).map(|idx| format!("n{}", idx % nodes)).collect();
-    let dsts: Vec<String> = (0..edges).map(|idx| format!("n{}", (idx * 7 + 3) % nodes)).collect();
+    let dsts: Vec<String> = (0..edges)
+        .map(|idx| format!("n{}", (idx * 7 + 3) % nodes))
+        .collect();
     let types: Vec<&str> = (0..edges)
         .map(|idx| if idx % 5 == 0 { "WORKS_AT" } else { "KNOWS" })
         .collect();
-    let since: Vec<Option<i64>> = (0..edges).map(|idx| Some(2020 + (idx % 5) as i64)).collect();
+    let since: Vec<Option<i64>> = (0..edges)
+        .map(|idx| Some(2020 + (idx % 5) as i64))
+        .collect();
     let edge_batch = RecordBatch::try_new(
         Arc::new(ArrowSchema::new(vec![
             Field::new(COL_EDGE_SRC, DataType::Utf8, false),
@@ -70,15 +76,16 @@ fn bench_terminal_projection(c: &mut Criterion) {
     c.bench_function("terminal_projection_table_preview", |b| {
         b.iter(|| {
             black_box(
-                graph.display_slice(DisplayOptions {
-                    view: DisplayView::Table,
-                    max_rows: 10,
-                    width: Some(100),
-                    sort_by: None,
-                    expand_attrs: true,
-                    attrs: vec!["since".to_owned()],
-                })
-                .unwrap(),
+                graph
+                    .display_slice(DisplayOptions {
+                        view: DisplayView::Table,
+                        max_rows: 10,
+                        width: Some(100),
+                        sort_by: None,
+                        expand_attrs: true,
+                        attrs: vec!["since".to_owned()],
+                    })
+                    .unwrap(),
             )
         })
     });
@@ -86,15 +93,16 @@ fn bench_terminal_projection(c: &mut Criterion) {
     c.bench_function("terminal_projection_glimpse", |b| {
         b.iter(|| {
             black_box(
-                graph.display_glimpse(DisplayOptions {
-                    view: DisplayView::Head,
-                    max_rows: 3,
-                    width: Some(100),
-                    sort_by: None,
-                    expand_attrs: true,
-                    attrs: vec!["since".to_owned()],
-                })
-                .unwrap(),
+                graph
+                    .display_glimpse(DisplayOptions {
+                        view: DisplayView::Head,
+                        max_rows: 3,
+                        width: Some(100),
+                        sort_by: None,
+                        expand_attrs: true,
+                        attrs: vec!["since".to_owned()],
+                    })
+                    .unwrap(),
             )
         })
     });

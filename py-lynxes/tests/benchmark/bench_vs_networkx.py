@@ -17,14 +17,15 @@ Results are printed to stdout and optionally saved to
 docs/benchmarks/bench_vs_networkx.md.
 """
 
-import sys
+import argparse
 import os
-import time
+import pathlib
 import random
 import statistics
+import sys
 import tempfile
-import pathlib
-from typing import Callable
+import time
+from collections.abc import Callable
 
 # ── dependency check ──────────────────────────────────────────────────────────
 
@@ -67,8 +68,8 @@ def barabasi_albert_gf(n: int, m: int = 3) -> gf.GraphFrame:
             degree[new_node] += 1
             degree[t] += 1
 
-    lines = [f'(n{i}: Node)' for i in range(n)]
-    lines += [f'n{s} -[EDGE]-> n{d}' for s, d in zip(edges_src, edges_dst)]
+    lines = [f"(n{i}: Node)" for i in range(n)]
+    lines += [f"n{s} -[EDGE]-> n{d}" for s, d in zip(edges_src, edges_dst)]
     content = "\n".join(lines) + "\n"
 
     with tempfile.NamedTemporaryFile(suffix=".gf", mode="w", delete=False, encoding="utf-8") as f:
@@ -89,12 +90,13 @@ def barabasi_albert_nx(n: int, m: int = 3) -> nx.DiGraph:
 
 # ── timing ────────────────────────────────────────────────────────────────────
 
-REPS = 3
+REPS = 3  # default; overridden at runtime by --reps
 
 
-def time_fn(fn: Callable, reps: int = REPS) -> float:
+def time_fn(fn: Callable, reps: int | None = None) -> float:
+    n = REPS if reps is None else reps
     times = []
-    for _ in range(reps):
+    for _ in range(n):
         t0 = time.perf_counter()
         fn()
         times.append(time.perf_counter() - t0)
@@ -144,14 +146,10 @@ def bench_pyo3_overhead(graph: gf.GraphFrame) -> dict[str, float]:
       - query only (collect() on a pre-built plan)
       - full Python call including Python-side plan construction
     """
-    import pyarrow  # only for the conversion test
 
     # Time just the collect() → pyarrow conversion
     result = (
-        graph.lazy()
-        .filter_nodes(gf.col("_id") == "n0")
-        .expand(hops=1, direction="out")
-        .collect()
+        graph.lazy().filter_nodes(gf.col("_id") == "n0").expand(hops=1, direction="out").collect()
     )
     t_conversion = time_fn(lambda: result.nodes().to_pyarrow())
     t_full = bench_expand_gf(graph)
@@ -160,7 +158,8 @@ def bench_pyo3_overhead(graph: gf.GraphFrame) -> dict[str, float]:
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-SIZES = [1_000, 10_000, 100_000]
+_DEFAULT_SIZES = [1_000, 10_000, 100_000]
+_DEFAULT_REPS = 3
 
 
 def fmt(seconds: float) -> str:
@@ -175,30 +174,62 @@ def speedup(gf_t: float, nx_t: float) -> str:
     if gf_t == 0:
         return "∞×"
     ratio = nx_t / gf_t
-    return f"{ratio:.1f}×" if ratio >= 1 else f"1/{1/ratio:.1f}×"
+    return f"{ratio:.1f}×" if ratio >= 1 else f"1/{1 / ratio:.1f}×"
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Lynxes vs NetworkX benchmark")
+    p.add_argument(
+        "--sizes",
+        nargs="+",
+        type=int,
+        default=_DEFAULT_SIZES,
+        metavar="N",
+        help="graph sizes to benchmark (default: 1000 10000 100000)",
+    )
+    p.add_argument(
+        "--output",
+        type=pathlib.Path,
+        default=None,
+        metavar="FILE",
+        help="write markdown results to FILE instead of the default docs path",
+    )
+    p.add_argument(
+        "--reps",
+        type=int,
+        default=_DEFAULT_REPS,
+        metavar="R",
+        help="repetitions per benchmark cell (default: 3)",
+    )
+    return p.parse_args()
 
 
 def main():
+    args = _parse_args()
+    sizes = args.sizes
+    global REPS  # noqa: PLW0603
+    REPS = args.reps
+
     rows = []
     print()
     print(f"{'N':>8}  {'Operation':<28}  {'Graphframe':>12}  {'NetworkX':>12}  {'Speedup':>10}")
     print("-" * 80)
 
-    for n in SIZES:
+    for n in sizes:
         print(f"  Building graphs n={n:,} ...", end="", flush=True)
         graph_gf = barabasi_albert_gf(n)
         graph_nx = barabasi_albert_nx(n)
         print(" done")
 
         ops = [
-            ("2-hop BFS expand", bench_expand_gf,   bench_expand_nx),
-            ("PageRank",         bench_pagerank_gf, bench_pagerank_nx),
+            ("2-hop BFS expand", bench_expand_gf, bench_expand_nx),
+            ("PageRank", bench_pagerank_gf, bench_pagerank_nx),
         ]
 
         for op_name, gf_fn, nx_fn in ops:
             t_gf = gf_fn(graph_gf)
             t_nx = nx_fn(graph_nx)
-            sp   = speedup(t_gf, t_nx)
+            sp = speedup(t_gf, t_nx)
             print(f"{n:>8,}  {op_name:<28}  {fmt(t_gf):>12}  {fmt(t_nx):>12}  {sp:>10}")
             rows.append((n, op_name, t_gf, t_nx))
 
@@ -209,14 +240,20 @@ def main():
     print(f"  Full query (filter→expand→collect): {overhead['full_query_ms']:.2f} ms")
     print(f"  PyArrow conversion (nodes.to_pyarrow): {overhead['pyarrow_conversion_ms']:.2f} ms")
 
-    # ── optional: write to docs/benchmarks/ ──────────────────────────────────
-    out_dir = pathlib.Path(__file__).parents[2] / "docs" / "benchmarks"
-    if out_dir.exists():
+    # ── optional: write markdown output ──────────────────────────────────────
+    if args.output is not None:
+        out_path = args.output
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        should_write = True
+    else:
+        out_dir = pathlib.Path(__file__).parents[2] / "docs" / "benchmarks"
         out_path = out_dir / "bench_vs_networkx.md"
+        should_write = out_dir.exists()
+    if should_write:
         lines = [
             "# Graphframe vs NetworkX Benchmark (TST-012)\n",
             f"| {'N':>8} | {'Operation':<28} | {'Graphframe':>12} | {'NetworkX':>12} | {'Speedup':>10} |\n",
-            f"|{'-'*10}|{'-'*30}|{'-'*14}|{'-'*14}|{'-'*12}|\n",
+            f"|{'-' * 10}|{'-' * 30}|{'-' * 14}|{'-' * 14}|{'-' * 12}|\n",
         ]
         for n, op, t_gf, t_nx in rows:
             lines.append(

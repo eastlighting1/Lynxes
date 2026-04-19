@@ -153,7 +153,9 @@ impl Connector for GFConnector {
     fn write<'a>(&'a self, graph: &'a GraphFrame) -> ConnectorFuture<'a, ()> {
         Box::pin(async move {
             match self.format {
-                GFConnectorFormat::Gfb => lynxes_io::write_gfb(graph, &self.path, &lynxes_io::GfbWriteOptions::default()),
+                GFConnectorFormat::Gfb => {
+                    lynxes_io::write_gfb(graph, &self.path, &lynxes_io::GfbWriteOptions::default())
+                }
                 GFConnectorFormat::Gf => Err(GFError::UnsupportedOperation {
                     message: "GFConnector write() currently supports .gfb targets only".to_owned(),
                 }),

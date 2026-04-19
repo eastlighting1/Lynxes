@@ -120,7 +120,11 @@ fn apply_truncation(specs: &[ColumnSpec], widths: &[usize], rows: &mut [DisplayR
     for row in rows {
         let mut next = BTreeMap::new();
         for (spec, width) in specs.iter().zip(widths.iter().copied()) {
-            let value = row.values.get(&spec.name).cloned().unwrap_or_else(String::new);
+            let value = row
+                .values
+                .get(&spec.name)
+                .cloned()
+                .unwrap_or_else(String::new);
             let clipped = match spec.strategy {
                 TruncateStrategy::Right => ellipsis_right(&value, width),
                 TruncateStrategy::Middle => ellipsis_middle(&value, width),

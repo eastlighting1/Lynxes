@@ -10,7 +10,9 @@ use lynxes_core::{
     BinaryOp, Direction, EdgeFrame, EdgeTypeSpec, Expr, GraphFrame, NodeFrame, ScalarValue,
     COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
 };
-use lynxes_io::{parse_gf, read_gfb, read_gfb_with_options, write_gfb, GfbReadOptions, GfbWriteOptions};
+use lynxes_io::{
+    parse_gf, read_gfb, read_gfb_with_options, write_gfb, GfbReadOptions, GfbWriteOptions,
+};
 use lynxes_lazy::LazyGraphFrame;
 
 // ── Shared fixture ────────────────────────────────────────────────────────────

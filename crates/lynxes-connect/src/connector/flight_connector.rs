@@ -9,7 +9,6 @@ use std::{
 };
 
 use arrow_array::RecordBatch;
-use arrow_ipc::writer::IpcWriteOptions;
 use arrow_flight::{
     encode::FlightDataEncoderBuilder,
     error::FlightError,
@@ -19,18 +18,14 @@ use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightEndpoint, FlightInfo,
     HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaAsIpc, SchemaResult, Ticket,
 };
+use arrow_ipc::writer::IpcWriteOptions;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use futures::{
-    stream,
-    Stream, StreamExt, TryStreamExt,
-};
+use futures::{stream, Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{
-    transport::{
-        Certificate, ClientTlsConfig, Endpoint, Identity, Server, ServerTlsConfig,
-    },
+    transport::{Certificate, ClientTlsConfig, Endpoint, Identity, Server, ServerTlsConfig},
     Request, Response, Status,
 };
 
@@ -48,8 +43,7 @@ type PutResultStream = Pin<Box<dyn Stream<Item = std::result::Result<PutResult, 
 type ActionResultStream =
     Pin<Box<dyn Stream<Item = std::result::Result<arrow_flight::Result, Status>> + Send>>;
 type FlightInfoStream = Pin<Box<dyn Stream<Item = std::result::Result<FlightInfo, Status>> + Send>>;
-type ActionTypeStream =
-    Pin<Box<dyn Stream<Item = std::result::Result<ActionType, Status>> + Send>>;
+type ActionTypeStream = Pin<Box<dyn Stream<Item = std::result::Result<ActionType, Status>> + Send>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FlightTlsConfig {
@@ -126,14 +120,22 @@ impl FlightConnector {
             {
                 tls_config = tls_config.identity(load_identity(cert_path, key_path)?);
             }
-            endpoint = endpoint.tls_config(tls_config).map_err(|err| GFError::ConnectorError {
-                message: format!("invalid Flight client TLS config: {err}"),
-            })?;
+            endpoint = endpoint
+                .tls_config(tls_config)
+                .map_err(|err| GFError::ConnectorError {
+                    message: format!("invalid Flight client TLS config: {err}"),
+                })?;
         }
 
-        let channel = endpoint.connect().await.map_err(|err| GFError::ConnectorError {
-            message: format!("failed to connect to Flight endpoint {}: {err}", self.config.endpoint),
-        })?;
+        let channel = endpoint
+            .connect()
+            .await
+            .map_err(|err| GFError::ConnectorError {
+                message: format!(
+                    "failed to connect to Flight endpoint {}: {err}",
+                    self.config.endpoint
+                ),
+            })?;
         let mut client = arrow_flight::FlightClient::new(channel);
         if let Some(auth) = &self.config.auth {
             client
@@ -208,11 +210,12 @@ impl FlightConnector {
     }
 
     async fn fetch_single_batch(&self, request: FlightTicketRequest) -> Result<RecordBatch> {
-        let ticket = Ticket::new(
-            serde_json::to_vec(&request).map_err(|err| GFError::ConnectorError {
-                message: format!("failed to encode Flight ticket request: {err}"),
-            })?,
-        );
+        let ticket =
+            Ticket::new(
+                serde_json::to_vec(&request).map_err(|err| GFError::ConnectorError {
+                    message: format!("failed to encode Flight ticket request: {err}"),
+                })?,
+            );
         let mut client = self.connect_client().await?;
         let batches: Vec<RecordBatch> = client
             .do_get(ticket)
@@ -248,7 +251,10 @@ impl FlightConnector {
             .build(input);
 
         let mut client = self.connect_client().await?;
-        let mut response = client.do_put(flight_data).await.map_err(flight_client_error)?;
+        let mut response = client
+            .do_put(flight_data)
+            .await
+            .map_err(flight_client_error)?;
         while let Some(_ack) = response.try_next().await.map_err(flight_client_error)? {}
         Ok(())
     }
@@ -337,10 +343,16 @@ impl Connector for FlightConnector {
 
     fn write<'a>(&'a self, graph: &'a GraphFrame) -> ConnectorFuture<'a, ()> {
         Box::pin(async move {
-            self.put_batch(FlightDataset::Nodes, graph.nodes().to_record_batch().clone())
-                .await?;
-            self.put_batch(FlightDataset::Edges, graph.edges().to_record_batch().clone())
-                .await?;
+            self.put_batch(
+                FlightDataset::Nodes,
+                graph.nodes().to_record_batch().clone(),
+            )
+            .await?;
+            self.put_batch(
+                FlightDataset::Edges,
+                graph.edges().to_record_batch().clone(),
+            )
+            .await?;
             Ok(())
         })
     }
@@ -383,11 +395,11 @@ impl FlightGraphService {
     pub async fn serve(self, addr: SocketAddr) -> Result<()> {
         let mut builder = Server::builder();
         if let Some(tls) = &self.config.tls {
-            builder = builder
-                .tls_config(server_tls_config(tls)?)
-                .map_err(|err| GFError::ConnectorError {
+            builder = builder.tls_config(server_tls_config(tls)?).map_err(|err| {
+                GFError::ConnectorError {
                     message: format!("invalid Flight server TLS config: {err}"),
-                })?;
+                }
+            })?;
         }
 
         builder
@@ -405,11 +417,11 @@ impl FlightGraphService {
     {
         let mut builder = Server::builder();
         if let Some(tls) = &self.config.tls {
-            builder = builder
-                .tls_config(server_tls_config(tls)?)
-                .map_err(|err| GFError::ConnectorError {
+            builder = builder.tls_config(server_tls_config(tls)?).map_err(|err| {
+                GFError::ConnectorError {
                     message: format!("invalid Flight server TLS config: {err}"),
-                })?;
+                }
+            })?;
         }
 
         builder
@@ -421,21 +433,17 @@ impl FlightGraphService {
             })
     }
 
-    pub async fn serve_listener<F>(
-        self,
-        listener: TcpListener,
-        shutdown: F,
-    ) -> Result<()>
+    pub async fn serve_listener<F>(self, listener: TcpListener, shutdown: F) -> Result<()>
     where
         F: Future<Output = ()> + Send + 'static,
     {
         let mut builder = Server::builder();
         if let Some(tls) = &self.config.tls {
-            builder = builder
-                .tls_config(server_tls_config(tls)?)
-                .map_err(|err| GFError::ConnectorError {
+            builder = builder.tls_config(server_tls_config(tls)?).map_err(|err| {
+                GFError::ConnectorError {
                     message: format!("invalid Flight server TLS config: {err}"),
-                })?;
+                }
+            })?;
         }
 
         builder
@@ -487,13 +495,10 @@ impl FlightService for FlightGraphService {
     ) -> std::result::Result<Response<Self::HandshakeStream>, Status> {
         self.require_authorized(&request)?;
         let mut input = request.into_inner();
-        let first = input
-            .message()
-            .await?
-            .unwrap_or(HandshakeRequest {
-                protocol_version: 0,
-                payload: Default::default(),
-            });
+        let first = input.message().await?.unwrap_or(HandshakeRequest {
+            protocol_version: 0,
+            payload: Default::default(),
+        });
         let response = HandshakeResponse {
             protocol_version: first.protocol_version,
             payload: first.payload,
@@ -535,7 +540,10 @@ impl FlightService for FlightGraphService {
         request: Request<FlightDescriptor>,
     ) -> std::result::Result<Response<PollInfo>, Status> {
         self.require_authorized(&request)?;
-        let info = self.get_flight_info(Request::new(request.into_inner())).await?.into_inner();
+        let info = self
+            .get_flight_info(Request::new(request.into_inner()))
+            .await?
+            .into_inner();
         Ok(Response::new(PollInfo::new().with_info(info)))
     }
 
@@ -649,7 +657,9 @@ impl FlightService for FlightGraphService {
             messages.push(message);
         }
         if messages.is_empty() {
-            return Err(Status::invalid_argument("do_put requires at least one FlightData message"));
+            return Err(Status::invalid_argument(
+                "do_put requires at least one FlightData message",
+            ));
         }
 
         let descriptor = messages[0]
@@ -665,17 +675,26 @@ impl FlightService for FlightGraphService {
         let mut staged = self.staged_uploads.write().unwrap();
         let entry = staged.entry(graph_name.clone()).or_default();
         match dataset {
-            FlightDataset::Nodes => entry.nodes = Some(NodeFrame::from_record_batch(batch).map_err(gf_status)?),
-            FlightDataset::Edges => entry.edges = Some(EdgeFrame::from_record_batch(batch).map_err(gf_status)?),
+            FlightDataset::Nodes => {
+                entry.nodes = Some(NodeFrame::from_record_batch(batch).map_err(gf_status)?)
+            }
+            FlightDataset::Edges => {
+                entry.edges = Some(EdgeFrame::from_record_batch(batch).map_err(gf_status)?)
+            }
         }
         if let (Some(nodes), Some(edges)) = (&entry.nodes, &entry.edges) {
             let graph = GraphFrame::new(nodes.clone(), edges.clone()).map_err(gf_status)?;
-            self.graphs.write().unwrap().insert(graph_name.clone(), graph);
+            self.graphs
+                .write()
+                .unwrap()
+                .insert(graph_name.clone(), graph);
             staged.remove(&graph_name);
         }
 
         let ack = PutResult {
-            app_metadata: format!("stored {} for {}", dataset.as_str(), graph_name).into_bytes().into(),
+            app_metadata: format!("stored {} for {}", dataset.as_str(), graph_name)
+                .into_bytes()
+                .into(),
         };
         Ok(Response::new(Box::pin(stream::iter(vec![Ok(ack)]))))
     }
@@ -685,7 +704,9 @@ impl FlightService for FlightGraphService {
         request: Request<tonic::Streaming<FlightData>>,
     ) -> std::result::Result<Response<Self::DoExchangeStream>, Status> {
         self.require_authorized(&request)?;
-        Err(Status::unimplemented("Flight do_exchange is not implemented"))
+        Err(Status::unimplemented(
+            "Flight do_exchange is not implemented",
+        ))
     }
 
     async fn do_action(
@@ -724,7 +745,11 @@ impl FlightService for FlightGraphService {
 }
 
 impl FlightGraphService {
-    fn flight_info(&self, graph_name: &str, dataset: FlightDataset) -> std::result::Result<FlightInfo, Status> {
+    fn flight_info(
+        &self,
+        graph_name: &str,
+        dataset: FlightDataset,
+    ) -> std::result::Result<FlightInfo, Status> {
         let graph = self.graph_or_not_found(graph_name)?;
         let batch = match dataset {
             FlightDataset::Nodes => graph.nodes().to_record_batch(),
@@ -749,10 +774,10 @@ impl FlightGraphService {
                 predicate: None,
             },
         };
-        let ticket = Ticket::new(
-            serde_json::to_vec(&ticket_request)
-                .map_err(|err| Status::internal(format!("failed to encode Flight ticket: {err}")))?,
-        );
+        let ticket =
+            Ticket::new(serde_json::to_vec(&ticket_request).map_err(|err| {
+                Status::internal(format!("failed to encode Flight ticket: {err}"))
+            })?);
 
         let mut endpoint = FlightEndpoint::new().with_ticket(ticket);
         if let Some(location) = &self.config.public_location {
@@ -893,7 +918,9 @@ fn parse_ticket(ticket: &Ticket) -> std::result::Result<FlightTicketRequest, Sta
         .map_err(|err| Status::invalid_argument(format!("invalid Flight ticket payload: {err}")))
 }
 
-fn parse_descriptor(descriptor: &FlightDescriptor) -> std::result::Result<(String, FlightDataset), Status> {
+fn parse_descriptor(
+    descriptor: &FlightDescriptor,
+) -> std::result::Result<(String, FlightDataset), Status> {
     if descriptor.r#type() != DescriptorType::Path {
         return Err(Status::invalid_argument(
             "Flight descriptor must use path form for graphframe service",
@@ -1101,12 +1128,18 @@ fn load_identity(cert_path: &Path, key_path: &Path) -> Result<Identity> {
 }
 
 fn server_tls_config(config: &FlightTlsConfig) -> Result<ServerTlsConfig> {
-    let cert_path = config.server_cert_path.as_ref().ok_or_else(|| GFError::InvalidConfig {
-        message: "Flight server TLS requires server_cert_path".to_owned(),
-    })?;
-    let key_path = config.server_key_path.as_ref().ok_or_else(|| GFError::InvalidConfig {
-        message: "Flight server TLS requires server_key_path".to_owned(),
-    })?;
+    let cert_path = config
+        .server_cert_path
+        .as_ref()
+        .ok_or_else(|| GFError::InvalidConfig {
+            message: "Flight server TLS requires server_cert_path".to_owned(),
+        })?;
+    let key_path = config
+        .server_key_path
+        .as_ref()
+        .ok_or_else(|| GFError::InvalidConfig {
+            message: "Flight server TLS requires server_key_path".to_owned(),
+        })?;
     let identity = load_identity(cert_path, key_path)?;
     let mut tls = ServerTlsConfig::new().identity(identity);
     if let Some(ca_path) = &config.ca_cert_path {

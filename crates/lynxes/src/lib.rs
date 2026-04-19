@@ -9,11 +9,11 @@ pub use lynxes_core::*;
 pub use lynxes_io::*;
 pub use lynxes_lazy::LazyGraphFrame;
 
-pub use lynxes_connect::{GFConnector, GFConnectorFormat};
 #[cfg(not(target_arch = "wasm32"))]
 pub use lynxes_connect::{
     AqlBindVars, AqlQuery, AqlValue, ArangoBackend, ArangoConfig, ArangoConnector, CypherParams,
     CypherQuery, CypherValue, FlightAuth, FlightConfig, FlightConnector, FlightGraphService,
-    FlightServerConfig, FlightTlsConfig, Neo4jBackend, Neo4jConfig, Neo4jConnector,
-    SparqlBackend, SparqlConfig, SparqlConnector, SparqlParams, SparqlQuery, SparqlValue,
+    FlightServerConfig, FlightTlsConfig, Neo4jBackend, Neo4jConfig, Neo4jConnector, SparqlBackend,
+    SparqlConfig, SparqlConnector, SparqlParams, SparqlQuery, SparqlValue,
 };
+pub use lynxes_connect::{GFConnector, GFConnectorFormat};

@@ -1,12 +1,10 @@
 """
 Shared pytest fixtures for Lynxes Python binding tests (TST-009).
 """
-import os
-import tempfile
 
 import pytest
-import lynxes as gf
 
+import lynxes as gf
 
 # ── Fixture data ──────────────────────────────────────────────────────────────
 

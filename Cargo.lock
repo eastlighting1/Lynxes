@@ -1003,64 +1003,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "graphframe-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-array",
- "arrow-schema",
- "clap",
- "graphframe-core",
- "indicatif",
-]
-
-[[package]]
-name = "graphframe-core"
-version = "0.1.0"
-dependencies = [
- "ahash",
- "arrow",
- "arrow-array",
- "arrow-flight",
- "arrow-ipc",
- "arrow-schema",
- "base64",
- "chrono",
- "criterion",
- "futures",
- "futures-core",
- "getrandom 0.3.4",
- "hashbrown 0.14.5",
- "js-sys",
- "lz4_flex",
- "parquet",
- "pest",
- "pest_derive",
- "prost",
- "rayon",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tonic",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "zstd",
-]
-
-[[package]]
-name = "graphframe-py"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "graphframe-core",
- "pyo3",
-]
-
-[[package]]
 name = "h2"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"

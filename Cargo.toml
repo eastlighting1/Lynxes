@@ -8,10 +8,6 @@ members = [
     "crates/lynxes-lazy",
     "crates/lynxes-python",
     "crates/lynxes-cli",
-    # legacy — kept during transition, will be removed after Phase 5
-    "crates/graphframe-core",
-    "crates/graphframe-py",
-    "crates/graphframe-cli",
 ]
 resolver = "2"
 

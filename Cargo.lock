@@ -1448,6 +1448,152 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
+name = "lynxes"
+version = "0.1.0"
+dependencies = [
+ "lynxes-connect",
+ "lynxes-core",
+ "lynxes-io",
+ "lynxes-lazy",
+ "lynxes-plan",
+]
+
+[[package]]
+name = "lynxes-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-array",
+ "arrow-schema",
+ "clap",
+ "indicatif",
+ "lynxes-connect",
+ "lynxes-core",
+ "lynxes-io",
+ "lynxes-lazy",
+ "lynxes-plan",
+]
+
+[[package]]
+name = "lynxes-connect"
+version = "0.1.0"
+dependencies = [
+ "arrow-array",
+ "arrow-flight",
+ "arrow-ipc",
+ "base64",
+ "futures",
+ "lynxes-core",
+ "lynxes-io",
+ "lynxes-lazy",
+ "lynxes-plan",
+ "prost",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+]
+
+[[package]]
+name = "lynxes-core"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "arrow",
+ "arrow-array",
+ "arrow-flight",
+ "arrow-ipc",
+ "arrow-schema",
+ "base64",
+ "chrono",
+ "criterion",
+ "futures",
+ "futures-core",
+ "getrandom 0.3.4",
+ "hashbrown 0.14.5",
+ "js-sys",
+ "lynxes-connect",
+ "lynxes-io",
+ "lynxes-lazy",
+ "lz4_flex",
+ "parquet",
+ "pest",
+ "pest_derive",
+ "prost",
+ "rayon",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "zstd",
+]
+
+[[package]]
+name = "lynxes-io"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-ipc",
+ "arrow-schema",
+ "chrono",
+ "futures-core",
+ "lynxes-core",
+ "lz4_flex",
+ "parquet",
+ "pest",
+ "pest_derive",
+ "serde",
+ "serde_json",
+ "zstd",
+]
+
+[[package]]
+name = "lynxes-lazy"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "hashbrown 0.14.5",
+ "lynxes-core",
+ "lynxes-io",
+ "lynxes-plan",
+ "rayon",
+]
+
+[[package]]
+name = "lynxes-plan"
+version = "0.1.0"
+dependencies = [
+ "arrow-schema",
+ "hashbrown 0.14.5",
+ "lynxes-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lynxes-python"
+version = "0.1.0"
+dependencies = [
+ "arrow",
+ "lynxes-connect",
+ "lynxes-core",
+ "lynxes-io",
+ "lynxes-lazy",
+ "lynxes-plan",
+ "pyo3",
+]
+
+[[package]]
 name = "lz4_flex"
 version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

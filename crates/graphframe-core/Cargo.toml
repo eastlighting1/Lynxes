@@ -1,0 +1,65 @@
+[package]
+name = "graphframe-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Wasm-safe dependencies (available on all targets)
+arrow = { workspace = true }
+arrow-ipc = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+pest = { workspace = true }
+pest_derive = { workspace = true }
+futures-core = { workspace = true }
+futures = { workspace = true }
+ahash = { workspace = true }
+hashbrown = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Native-only: not available on wasm32 (mio/tokio OS I/O, rayon threads, gRPC)
+arrow-flight = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+rayon = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+zstd = { workspace = true }
+lz4_flex = { workspace = true }
+parquet = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+web-sys = { workspace = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+tokio = { workspace = true }
+
+[[bench]]
+name = "csr_vs_linear"
+harness = false
+
+[[bench]]
+name = "parallel_expand"
+harness = false
+
+[[bench]]
+name = "in_csr_build"
+harness = false
+
+[[bench]]
+name = "astar_vs_dijkstra"
+harness = false

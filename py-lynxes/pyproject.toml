@@ -1,0 +1,48 @@
+[project]
+name = "lynxes"
+version = "0.1.0"
+description = "A graph analytics engine built directly on Apache Arrow"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Lynxes" }]
+keywords = ["graph", "arrow", "analytics", "lynxes"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "pandas>=2.3.3",
+]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "../crates/lynxes-python/Cargo.toml"
+python-source = "src"
+module-name = "lynxes._lynxes"
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.13.1",
+    "pytest>=8.0",
+    "pyarrow>=17.0",
+]
+benchmark = [
+    "igraph>=0.11",
+    "networkx>=3.0",
+]

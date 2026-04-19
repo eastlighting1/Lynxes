@@ -5,36 +5,40 @@ build/
 dist/
 wheels/
 *.egg-info
-python/graphframe/*.pyd
-python/graphframe/*.pdb
 
 # Virtual environments
 .venv
 
-.cargo
-.claude
-.claude\settings.local.json
-.pytest_cache
-.venv
-crates
-docs
-python
-target
-target\criterion
-target\debug
-target\maturin
-target\release
-target\tmp
-target\wasm32-unknown-unknown
-target\wheels
-target\.rustc_info.json
-target\CACHEDIR.TAG
-target-pyb009
-www
+# Local working memory / tool config
 AGENTS.md
 Brain.md
 CLAUDE.md
 DESIGN.md
 GEMINI.md
-TEST_PLAN.md
-WBS.tsv
+simsim.gf
+simsim.py
+DOCS_EXAMPLES_TESTS_PLAN.md
+.claude
+docs/spec
+.claude/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Native extension build artifacts
+*.pyd
+*.pdb
+*.so
+*.dylib
+
+# Rust build outputs
+target/
+target-*/
+
+# Python virtualenv / test cache
+.venv/
+.pytest_cache/
+
+# Local scratch
+*.bak

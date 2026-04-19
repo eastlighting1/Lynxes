@@ -19,17 +19,22 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Topic :: Scientific/Engineering",
 ]
-dependencies = []
+dependencies = [
+    "pandas>=2.3.3",
+]
 
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
-manifest-path = "crates/graphframe-py/Cargo.toml"
-python-source = "python"
-module-name = "graphframe._graphframe_py"
+manifest-path = "crates/lynxes-python/Cargo.toml"
+python-source = "py-lynxes/src"
+module-name = "lynxes._lynxes"
 features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["py-lynxes/tests/unit"]
 
 [dependency-groups]
 dev = [

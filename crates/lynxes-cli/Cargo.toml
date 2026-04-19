@@ -1,0 +1,21 @@
+[package]
+name = "lynxes-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+arrow-array  = { workspace = true }
+clap = { workspace = true }
+indicatif = { workspace = true }
+lynxes-connect = { path = "../lynxes-connect" }
+lynxes-core = { path = "../lynxes-core" }
+lynxes-io = { path = "../lynxes-io" }
+lynxes-lazy = { path = "../lynxes-lazy" }
+lynxes-plan = { path = "../lynxes-plan" }
+
+[dev-dependencies]
+arrow-schema = { workspace = true }

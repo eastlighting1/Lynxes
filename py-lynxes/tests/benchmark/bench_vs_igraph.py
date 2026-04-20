@@ -44,14 +44,17 @@ except ImportError:
 
 # ── graph generation helpers ──────────────────────────────────────────────────
 
-def generate_lfr_edges(n: int, mu: float = 0.1, max_degree: int = 1000, seed: int = 42) -> np.ndarray:
+
+def generate_lfr_edges(
+    n: int, mu: float = 0.1, max_degree: int = 1000, seed: int = 42
+) -> np.ndarray:
     """Generate scale-free complex graph edges using numpy."""
     np.random.seed(seed)
     random.seed(seed)
-    
+
     degrees = np.random.zipf(2.5, n)
-    degrees = np.clip(degrees, 1, max_degree) 
-    
+    degrees = np.clip(degrees, 1, max_degree)
+
     num_communities = max(10, int(n / 1000))
     comm_sizes = np.random.zipf(2.0, num_communities)
     comm_probs = comm_sizes / comm_sizes.sum()
@@ -75,10 +78,10 @@ def generate_lfr_edges(n: int, mu: float = 0.1, max_degree: int = 1000, seed: in
         c_internal_degs = internal_degrees[communities == c]
         c_stubs = np.repeat(c_nodes, c_internal_degs)
         edges_list.append(match_stubs(c_stubs))
-        
+
     external_stubs = np.repeat(nodes, external_degrees)
     edges_list.append(match_stubs(external_stubs))
-    
+
     return np.vstack(edges_list)
 
 
@@ -86,14 +89,14 @@ def lfr_complex_gf(n: int, edges: np.ndarray) -> gf.GraphFrame:
     """Generate a complex LFR graph as a GraphFrame using pre-computed edges."""
     random.seed(42)
     np.random.seed(42)
-    
+
     cities = ["Seoul", "Busan", "Incheon", "Daegu", "Daejeon"]
     person_statuses = ["active", "away", "inactive"]
     company_statuses = ["hiring", "stable", "scaling"]
     roles = ["Engineer", "Designer", "Manager", "Analyst"]
     projects = ["graph-runtime", "ai-core", "data-pipeline", "frontend-v2"]
     channels = ["coffee-chat", "study-group", "team-sync", "alumni"]
-    
+
     is_company = np.random.rand(n) < 0.1
     batch_size = 500_000
 
@@ -105,54 +108,70 @@ def lfr_complex_gf(n: int, edges: np.ndarray) -> gf.GraphFrame:
                 city = random.choice(cities)
                 status = random.choice(company_statuses)
                 founded = random.randint(1990, 2024)
-                node_buffer.append(f'(n{i}: Company {{ founded: {founded}, city: "{city}", status: "{status}" }})\n')
+                node_buffer.append(
+                    f'(n{i}: Company {{ founded: {founded}, city: "{city}", status: "{status}" }})\n'
+                )
             else:
                 city = random.choice(cities)
                 status = random.choice(person_statuses)
                 age = random.randint(20, 65)
                 score = round(random.uniform(0.5, 0.99), 2)
-                node_buffer.append(f'(n{i}: Person {{ age: {age}, score: {score}, city: "{city}", status: "{status}" }})\n')
-            
+                node_buffer.append(
+                    f'(n{i}: Person {{ age: {age}, score: {score}, city: "{city}", status: "{status}" }})\n'
+                )
+
             if len(node_buffer) >= batch_size:
                 f.writelines(node_buffer)
                 node_buffer.clear()
         if node_buffer:
             f.writelines(node_buffer)
             node_buffer.clear()
-        
+
         f.write("\n")
-            
+
         edge_buffer = []
         for src, dst in edges:
             src_is_comp = is_company[src]
             dst_is_comp = is_company[dst]
-            
+
             if not src_is_comp and not dst_is_comp:
                 if random.random() < 0.8:
                     channel = random.choice(channels)
                     weight = round(random.uniform(0.1, 1.0), 2)
                     since = random.randint(2015, 2025)
-                    edge_buffer.append(f'n{src} -[KNOWS]-> n{dst} {{ since: {since}, weight: {weight}, channel: "{channel}" }}\n')
+                    edge_buffer.append(
+                        f'n{src} -[KNOWS]-> n{dst} {{ since: {since}, weight: {weight}, channel: "{channel}" }}\n'
+                    )
                 else:
                     cohort = f"bootcamp-{random.randint(1, 10)}"
-                    edge_buffer.append(f'n{src} -[MENTORED_THROUGH_BOOTCAMP]-> n{dst} {{ since: {random.randint(2018, 2024)}, cohort: "{cohort}" }}\n')
+                    edge_buffer.append(
+                        f'n{src} -[MENTORED_THROUGH_BOOTCAMP]-> n{dst} {{ since: {random.randint(2018, 2024)}, cohort: "{cohort}" }}\n'
+                    )
             elif not src_is_comp and dst_is_comp:
                 if random.random() < 0.7:
                     role = random.choice(roles)
-                    edge_buffer.append(f'n{src} -[WORKS_AT]-> n{dst} {{ role: "{role}", since: {random.randint(2010, 2025)}, status: "full-time" }}\n')
+                    edge_buffer.append(
+                        f'n{src} -[WORKS_AT]-> n{dst} {{ role: "{role}", since: {random.randint(2010, 2025)}, status: "full-time" }}\n'
+                    )
                 else:
                     project = random.choice(projects)
-                    edge_buffer.append(f'n{src} -[COLLABORATES_ON]-> n{dst} {{ project: "{project}", status: "pilot" }}\n')
+                    edge_buffer.append(
+                        f'n{src} -[COLLABORATES_ON]-> n{dst} {{ project: "{project}", status: "pilot" }}\n'
+                    )
             elif src_is_comp and not dst_is_comp:
                 role = random.choice(roles)
-                edge_buffer.append(f'n{dst} -[WORKS_AT]-> n{src} {{ role: "{role}", since: {random.randint(2010, 2025)}, status: "contract" }}\n')
+                edge_buffer.append(
+                    f'n{dst} -[WORKS_AT]-> n{src} {{ role: "{role}", since: {random.randint(2010, 2025)}, status: "contract" }}\n'
+                )
             else:
-                edge_buffer.append(f'n{src} -[PARTNERS_WITH]-> n{dst} {{ since: {random.randint(2000, 2025)}, tier: "strategic" }}\n')
+                edge_buffer.append(
+                    f'n{src} -[PARTNERS_WITH]-> n{dst} {{ since: {random.randint(2000, 2025)}, tier: "strategic" }}\n'
+                )
 
             if len(edge_buffer) >= batch_size:
                 f.writelines(edge_buffer)
                 edge_buffer.clear()
-        
+
         if edge_buffer:
             f.writelines(edge_buffer)
             edge_buffer.clear()

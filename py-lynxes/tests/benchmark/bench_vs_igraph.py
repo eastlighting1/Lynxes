@@ -6,7 +6,7 @@ Compares Graphframe and igraph on three operations:
   2. PageRank (damping=0.85, 100 iterations)
   3. Weakly Connected Components
 
-Graph sizes: 1 000, 10 000, 100 000 nodes (scale-free via Barabasi-Albert)
+Graph sizes: 1 000, 10 000, 100 000 nodes (complex LFR structure)
 
 Usage:
     uv run python python/benchmarks/bench_vs_igraph.py
@@ -24,6 +24,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+import numpy as np
 
 # ── dependency check ──────────────────────────────────────────────────────────
 
@@ -42,47 +43,128 @@ except ImportError:
 
 # ── graph generation helpers ──────────────────────────────────────────────────
 
+def generate_lfr_edges(n: int, mu: float = 0.1, max_degree: int = 1000, seed: int = 42) -> np.ndarray:
+    """Generate scale-free complex graph edges using numpy."""
+    np.random.seed(seed)
+    random.seed(seed)
+    
+    degrees = np.random.zipf(2.5, n)
+    degrees = np.clip(degrees, 1, max_degree) 
+    
+    num_communities = max(10, int(n / 1000))
+    comm_sizes = np.random.zipf(2.0, num_communities)
+    comm_probs = comm_sizes / comm_sizes.sum()
+    communities = np.random.choice(num_communities, size=n, p=comm_probs)
 
-def barabasi_albert_gf(n: int, m: int = 3) -> gf.GraphFrame:
-    """Generate a Barabasi-Albert scale-free graph as a GraphFrame."""
-    rng = random.Random(42)
-    list(range(m))
-    degree = [0] * n
-    edges_src, edges_dst = [], []
+    external_degrees = np.random.binomial(degrees, mu)
+    internal_degrees = degrees - external_degrees
+    nodes = np.arange(n)
 
-    for new_node in range(m, n):
-        total_deg = max(sum(degree[:new_node]), 1)
-        chosen = set()
-        while len(chosen) < m:
-            r = rng.random() * total_deg
-            cum = 0.0
-            for t in range(new_node):
-                cum += max(degree[t], 1)
-                if cum >= r:
-                    chosen.add(t)
-                    break
-        for t in chosen:
-            edges_src.append(str(new_node))
-            edges_dst.append(str(t))
-            degree[new_node] += 1
-            degree[t] += 1
+    def match_stubs(stub_list):
+        np.random.shuffle(stub_list)
+        if len(stub_list) % 2 != 0:
+            stub_list = stub_list[:-1]
+        if len(stub_list) == 0:
+            return np.empty((0, 2), dtype=np.int32)
+        return stub_list.reshape(-1, 2)
 
-    gf_text_lines = [f"(n{i}: Node)" for i in range(n)]
-    gf_text_lines += [f"n{s} -[EDGE]-> n{d}" for s, d in zip(edges_src, edges_dst)]
-    gf_text = "\n".join(gf_text_lines) + "\n"
+    edges_list = []
+    for c in range(num_communities):
+        c_nodes = nodes[communities == c]
+        c_internal_degs = internal_degrees[communities == c]
+        c_stubs = np.repeat(c_nodes, c_internal_degs)
+        edges_list.append(match_stubs(c_stubs))
+        
+    external_stubs = np.repeat(nodes, external_degrees)
+    edges_list.append(match_stubs(external_stubs))
+    
+    return np.vstack(edges_list)
+
+
+def lfr_complex_gf(n: int, edges: np.ndarray) -> gf.GraphFrame:
+    """Generate a complex LFR graph as a GraphFrame using pre-computed edges."""
+    random.seed(42)
+    np.random.seed(42)
+    
+    cities = ["Seoul", "Busan", "Incheon", "Daegu", "Daejeon"]
+    person_statuses = ["active", "away", "inactive"]
+    company_statuses = ["hiring", "stable", "scaling"]
+    roles = ["Engineer", "Designer", "Manager", "Analyst"]
+    projects = ["graph-runtime", "ai-core", "data-pipeline", "frontend-v2"]
+    channels = ["coffee-chat", "study-group", "team-sync", "alumni"]
+    
+    is_company = np.random.rand(n) < 0.1
+    batch_size = 500_000
 
     with tempfile.NamedTemporaryFile(suffix=".gf", mode="w", delete=False, encoding="utf-8") as f:
-        f.write(gf_text)
         path = f.name
+        node_buffer = []
+        for i in range(n):
+            if is_company[i]:
+                city = random.choice(cities)
+                status = random.choice(company_statuses)
+                founded = random.randint(1990, 2024)
+                node_buffer.append(f'(n{i}: Company {{ founded: {founded}, city: "{city}", status: "{status}" }})\n')
+            else:
+                city = random.choice(cities)
+                status = random.choice(person_statuses)
+                age = random.randint(20, 65)
+                score = round(random.uniform(0.5, 0.99), 2)
+                node_buffer.append(f'(n{i}: Person {{ age: {age}, score: {score}, city: "{city}", status: "{status}" }})\n')
+            
+            if len(node_buffer) >= batch_size:
+                f.writelines(node_buffer)
+                node_buffer.clear()
+        if node_buffer:
+            f.writelines(node_buffer)
+            node_buffer.clear()
+        
+        f.write("\n")
+            
+        edge_buffer = []
+        for src, dst in edges:
+            src_is_comp = is_company[src]
+            dst_is_comp = is_company[dst]
+            
+            if not src_is_comp and not dst_is_comp:
+                if random.random() < 0.8:
+                    channel = random.choice(channels)
+                    weight = round(random.uniform(0.1, 1.0), 2)
+                    since = random.randint(2015, 2025)
+                    edge_buffer.append(f'n{src} -[KNOWS]-> n{dst} {{ since: {since}, weight: {weight}, channel: "{channel}" }}\n')
+                else:
+                    cohort = f"bootcamp-{random.randint(1, 10)}"
+                    edge_buffer.append(f'n{src} -[MENTORED_THROUGH_BOOTCAMP]-> n{dst} {{ since: {random.randint(2018, 2024)}, cohort: "{cohort}" }}\n')
+            elif not src_is_comp and dst_is_comp:
+                if random.random() < 0.7:
+                    role = random.choice(roles)
+                    edge_buffer.append(f'n{src} -[WORKS_AT]-> n{dst} {{ role: "{role}", since: {random.randint(2010, 2025)}, status: "full-time" }}\n')
+                else:
+                    project = random.choice(projects)
+                    edge_buffer.append(f'n{src} -[COLLABORATES_ON]-> n{dst} {{ project: "{project}", status: "pilot" }}\n')
+            elif src_is_comp and not dst_is_comp:
+                role = random.choice(roles)
+                edge_buffer.append(f'n{dst} -[WORKS_AT]-> n{src} {{ role: "{role}", since: {random.randint(2010, 2025)}, status: "contract" }}\n')
+            else:
+                edge_buffer.append(f'n{src} -[PARTNERS_WITH]-> n{dst} {{ since: {random.randint(2000, 2025)}, tier: "strategic" }}\n')
+
+            if len(edge_buffer) >= batch_size:
+                f.writelines(edge_buffer)
+                edge_buffer.clear()
+        
+        if edge_buffer:
+            f.writelines(edge_buffer)
+            edge_buffer.clear()
+
     try:
         return gf.read_gf(path)
     finally:
         os.unlink(path)
 
 
-def barabasi_albert_igraph(n: int, m: int = 3) -> ig.Graph:
-    """Generate a Barabasi-Albert scale-free graph as an igraph Graph."""
-    return ig.Graph.Barabasi(n=n, m=m, directed=True, power=1.0, start_from=ig.Graph(m))
+def lfr_complex_igraph(n: int, edges: np.ndarray) -> ig.Graph:
+    """Generate the equivalent complex LFR graph as an igraph Graph."""
+    return ig.Graph(n=n, edges=edges.tolist(), directed=True)
 
 
 # ── timing helpers ────────────────────────────────────────────────────────────
@@ -209,8 +291,9 @@ def main():
 
     for n in sizes:
         print(f"  Building graphs n={n:,} ...", end="", flush=True)
-        graph_gf = barabasi_albert_gf(n)
-        graph_ig = barabasi_albert_igraph(n)
+        edges = generate_lfr_edges(n)
+        graph_gf = lfr_complex_gf(n, edges)
+        graph_ig = lfr_complex_igraph(n, edges)
         print(" done")
 
         ops = [

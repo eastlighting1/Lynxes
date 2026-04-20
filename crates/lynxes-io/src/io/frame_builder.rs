@@ -346,7 +346,7 @@ fn build_labels_array(nodes: &[ParsedNodeDecl]) -> arrow_array::ListArray {
 fn build_user_array<'a, I>(
     column: &str,
     dtype: &DataType,
-    nullable: bool,
+    _nullable: bool,
     values: I,
 ) -> Result<ArrayRef>
 where
@@ -522,7 +522,6 @@ where
             ),
         }),
     }
-    .map(|array| if nullable { array } else { array })
 }
 
 fn type_build_error(column: &str, expected: &str, actual: Option<&GFValue>) -> Result<ArrayRef> {

@@ -227,7 +227,7 @@ fn degree_centrality_values_in_zero_one_range() {
         for id in &["a", "b", "c", "d"] {
             let v = get_f64(&result, id, "degree_centrality");
             assert!(
-                v >= 0.0 && v <= 1.0,
+                (0.0..=1.0).contains(&v),
                 "{:?} centrality of {} = {} out of [0,1]",
                 dir,
                 id,
@@ -343,7 +343,7 @@ fn betweenness_values_in_zero_one_range() {
     for id in &["a", "b", "c", "d", "e"] {
         let v = get_f64(&result, id, "betweenness");
         assert!(
-            v >= 0.0 && v <= 1.0,
+            (0.0..=1.0).contains(&v),
             "betweenness of {} = {} out of [0,1]",
             id,
             v

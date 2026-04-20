@@ -154,6 +154,7 @@ impl GraphFrame {
 /// `in_edges[v] = [(u, raw_weight), ...]` — raw (unnormalised) weights of
 /// edges pointing at v.
 /// `out_weight[u]` — sum of raw outgoing weights from u (0.0 for dangling).
+#[allow(clippy::type_complexity)]
 fn build_in_adjacency(
     graph: &GraphFrame,
     config: &PageRankConfig,
@@ -288,7 +289,7 @@ fn build_output(graph: &GraphFrame, ranks: Vec<f64>) -> Result<NodeFrame> {
     ]));
 
     let batch = RecordBatch::try_new(schema, vec![id_col, label_col, pr_col])
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
 
     NodeFrame::from_record_batch(batch)
 }

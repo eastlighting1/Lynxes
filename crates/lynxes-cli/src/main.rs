@@ -458,6 +458,7 @@ fn cmd_query(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_query_with_render(
     input: &str,
     from: Option<&str>,

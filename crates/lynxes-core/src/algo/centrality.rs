@@ -24,17 +24,12 @@ use crate::{
 };
 
 /// Configuration for betweenness-centrality computation.
+#[derive(Default)]
 pub struct BetweennessConfig {
     /// Optional numeric edge column used as edge weight.
     ///
     /// `None` means every eligible edge has uniform weight `1`.
     pub weight_col: Option<String>,
-}
-
-impl Default for BetweennessConfig {
-    fn default() -> Self {
-        Self { weight_col: None }
-    }
 }
 
 const COST_EPS: f64 = 1e-10;
@@ -369,7 +364,7 @@ fn build_f64_column_output(
     ]));
 
     let batch = RecordBatch::try_new(schema, vec![id_col, label_col, val_col])
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
 
     NodeFrame::from_record_batch(batch)
 }

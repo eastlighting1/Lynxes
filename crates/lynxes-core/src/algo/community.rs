@@ -170,8 +170,7 @@ impl WeightedGraph {
         let mut self_loops = vec![0.0f64; community_count];
         let mut degree = vec![0.0f64; community_count];
 
-        for node in 0..self.node_count() {
-            let community = assignment[node];
+        for (node, &community) in assignment.iter().enumerate().take(self.node_count()) {
             self_loops[community] += self.self_loops[node];
         }
 
@@ -358,7 +357,7 @@ fn build_output(graph: &GraphFrame, community_ids: &[u32]) -> Result<NodeFrame> 
         Field::new("community_id", DataType::UInt32, false),
     ]));
     let batch = RecordBatch::try_new(schema, vec![id_col, label_col, community_col])
-        .map_err(|error| std::io::Error::other(error))?;
+        .map_err(std::io::Error::other)?;
     NodeFrame::from_record_batch(batch)
 }
 

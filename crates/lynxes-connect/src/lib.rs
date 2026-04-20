@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 pub mod connector;
 
 #[cfg(not(target_arch = "wasm32"))]

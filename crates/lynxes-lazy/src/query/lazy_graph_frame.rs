@@ -18,7 +18,7 @@ impl LazyGraphFrame {
     pub fn from_graph(graph: &GraphFrame) -> Self {
         Self {
             plan: LogicalPlan::Scan {
-                source: Arc::new(InMemoryConnector::default()),
+                source: Arc::new(InMemoryConnector),
                 node_columns: None,
                 edge_columns: None,
             },

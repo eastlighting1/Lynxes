@@ -158,7 +158,7 @@ impl PartitionedGraph {
                 // Which frontier nodes live in this shard?
                 let shard_seeds: Vec<&str> = frontier
                     .iter()
-                    .filter(|id| self.shard_of(id).map_or(false, |s| s == shard_idx))
+                    .filter(|id| self.shard_of(id) == Some(shard_idx))
                     .map(String::as_str)
                     .collect();
                 if shard_seeds.is_empty() {
@@ -249,8 +249,8 @@ impl PartitionedGraph {
 ///
 /// # Example
 ///
-/// ```no_run
-/// use lynxes_core::{GraphPartitionMethod, GraphPartitioner};
+/// ```ignore
+/// use lynxes_core::{Direction, EdgeTypeSpec, GraphPartitionMethod, GraphPartitioner};
 ///
 /// let pg = GraphPartitioner::by_hash(&graph, 4)?;
 /// println!("{:?}", pg.stats());

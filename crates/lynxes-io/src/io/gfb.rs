@@ -22,9 +22,10 @@ const GFB_MAGIC: &[u8; 8] = b"GFRAME\x01\x00";
 const GFB_VERSION_MAJOR: u16 = 1;
 const GFB_VERSION_MINOR: u16 = 0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GfbCompression {
     None,
+    #[default]
     Zstd,
     Lz4,
 }
@@ -36,12 +37,6 @@ impl GfbCompression {
             Self::Zstd => "zstd",
             Self::Lz4 => "lz4",
         }
-    }
-}
-
-impl Default for GfbCompression {
-    fn default() -> Self {
-        Self::Zstd
     }
 }
 
@@ -214,7 +209,7 @@ pub(crate) fn read_gfb_inspect_bytes(bytes: &[u8]) -> Result<GfbInspect> {
         serde_json::from_slice(&bytes[footer_start..bytes.len() - 8]).map_err(parse_json_error)?;
 
     let header_len = u32::from_le_bytes(
-        read_fixed(&bytes, footer.header_offset as usize, 4)?
+        read_fixed(bytes, footer.header_offset as usize, 4)?
             .try_into()
             .unwrap(),
     ) as usize;
@@ -407,7 +402,7 @@ pub(crate) fn read_gfb_bytes_with_options(
     validate_footer(&footer, bytes.len())?;
 
     let header_len = u32::from_le_bytes(
-        read_fixed(&bytes, footer.header_offset as usize, 4)?
+        read_fixed(bytes, footer.header_offset as usize, 4)?
             .try_into()
             .unwrap(),
     ) as usize;
@@ -424,7 +419,7 @@ pub(crate) fn read_gfb_bytes_with_options(
 
     let compression = parse_compression(&header.compression)?;
     let schema_len = u64::from_le_bytes(
-        read_fixed(&bytes, footer.schema_offset as usize, 8)?
+        read_fixed(bytes, footer.schema_offset as usize, 8)?
             .try_into()
             .unwrap(),
     ) as usize;
@@ -434,8 +429,8 @@ pub(crate) fn read_gfb_bytes_with_options(
         });
     }
 
-    let node_batch = decode_block_batch(&bytes, footer.node_offset as usize, compression)?;
-    let edge_batch = decode_block_batch(&bytes, footer.edge_offset as usize, compression)?;
+    let node_batch = decode_block_batch(bytes, footer.node_offset as usize, compression)?;
+    let edge_batch = decode_block_batch(bytes, footer.edge_offset as usize, compression)?;
 
     if node_batch.num_rows() != header.node_count || edge_batch.num_rows() != header.edge_count {
         return Err(GFError::SchemaMismatch {
@@ -450,7 +445,7 @@ pub(crate) fn read_gfb_bytes_with_options(
     }
 
     let index_json =
-        decode_json_block::<GfbIndexOwned>(&bytes, footer.index_offset as usize, compression)?;
+        decode_json_block::<GfbIndexOwned>(bytes, footer.index_offset as usize, compression)?;
     validate_index(&index_json, &node_batch)?;
 
     let nodes = NodeFrame::from_record_batch(node_batch)?;
@@ -627,7 +622,7 @@ fn parse_compression(value: &str) -> Result<GfbCompression> {
     }
 }
 
-fn read_fixed<'a>(bytes: &'a [u8], offset: usize, len: usize) -> Result<&'a [u8]> {
+fn read_fixed(bytes: &[u8], offset: usize, len: usize) -> Result<&[u8]> {
     let end = checked_end(offset, len, bytes.len())?;
     Ok(&bytes[offset..end])
 }
@@ -835,7 +830,7 @@ mod tests {
         assert_eq!(header["node_count"], 2);
         assert_eq!(header["edge_count"], 1);
         assert_eq!(header["metadata"]["source"], "unit-test");
-        assert!(header["node_labels"].as_array().unwrap().len() >= 1);
+        assert!(!header["node_labels"].as_array().unwrap().is_empty());
     }
 
     #[test]

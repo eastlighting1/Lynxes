@@ -148,6 +148,7 @@ impl GraphFrame {
     /// The heuristic must return finite, non-negative estimates. Graphframe
     /// does not attempt to prove admissibility; correctness relative to
     /// Dijkstra is guaranteed only when the heuristic is admissible.
+    #[allow(clippy::type_complexity)]
     pub fn astar_shortest_path(
         &self,
         src: &str,
@@ -429,7 +430,7 @@ fn dijkstra_single(
                 });
             } else if (nc - old).abs() < COST_EPS {
                 // Equal cost: prefer lower predecessor index (spec tie-break).
-                if prev[nb as usize].map_or(false, |p| node_idx < p) {
+                if prev[nb as usize].is_some_and(|p| node_idx < p) {
                     prev[nb as usize] = Some(node_idx);
                 }
             }
@@ -469,10 +470,10 @@ fn dijkstra_all(
         }
         for (nb, eid) in neighbor_pairs(graph.edges(), node_idx, config) {
             let w = edge_weight(graph.edges(), eid, config)?;
-            if (d + w - dist[nb as usize]).abs() < COST_EPS {
-                if !all_preds[nb as usize].contains(&node_idx) {
-                    all_preds[nb as usize].push(node_idx);
-                }
+            if (d + w - dist[nb as usize]).abs() < COST_EPS
+                && !all_preds[nb as usize].contains(&node_idx)
+            {
+                all_preds[nb as usize].push(node_idx);
             }
         }
     }
@@ -564,10 +565,10 @@ fn astar_single(
                     cost: tentative_g + heuristic_cost(graph, nb, dst_id, heuristic)?,
                     node_idx: nb,
                 });
-            } else if (tentative_g - old_g).abs() < COST_EPS {
-                if prev[nb as usize].map_or(false, |p| node_idx < p) {
-                    prev[nb as usize] = Some(node_idx);
-                }
+            } else if (tentative_g - old_g).abs() < COST_EPS
+                && prev[nb as usize].is_some_and(|p| node_idx < p)
+            {
+                prev[nb as usize] = Some(node_idx);
             }
         }
     }
@@ -643,12 +644,12 @@ fn shortest_path_candidate(
                     node_idx: nb,
                     hops: next_hops,
                 });
-            } else if (next_cost - dist[next_slot]).abs() < COST_EPS {
-                if prev_node[next_slot].map_or(false, |p| node_idx < p) {
-                    prev_node[next_slot] = Some(node_idx);
-                    prev_hops[next_slot] = Some(hops);
-                    prev_edge[next_slot] = Some(eid);
-                }
+            } else if (next_cost - dist[next_slot]).abs() < COST_EPS
+                && prev_node[next_slot].is_some_and(|p| node_idx < p)
+            {
+                prev_node[next_slot] = Some(node_idx);
+                prev_hops[next_slot] = Some(hops);
+                prev_edge[next_slot] = Some(eid);
             }
         }
     }
@@ -675,6 +676,7 @@ fn reconstruct_path(prev: &[Option<u32>], src_idx: u32, dst_idx: u32) -> Vec<u32
     path
 }
 
+#[allow(clippy::too_many_arguments)]
 fn reconstruct_path_candidate(
     node_count: usize,
     src_idx: u32,

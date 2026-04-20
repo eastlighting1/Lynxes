@@ -20,6 +20,7 @@ use lynxes_plan::{
 };
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum ExecutionValue {
     Graph(GraphFrame),
     Nodes(NodeFrame),

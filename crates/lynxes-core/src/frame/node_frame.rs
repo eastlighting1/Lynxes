@@ -138,10 +138,10 @@ impl NodeFrame {
             .iter()
             .map(|col| arrow::compute::filter(col.as_ref(), mask))
             .collect::<std::result::Result<_, _>>()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         let filtered_batch = RecordBatch::try_new(self.data.schema_ref().clone(), filtered_columns)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         Ok(Self::from_valid_batch(filtered_batch))
     }
@@ -185,7 +185,7 @@ impl NodeFrame {
             .collect();
 
         let new_batch = RecordBatch::try_new(Arc::new(ArrowSchema::new(new_fields)), new_columns)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         // Row set is unchanged ??clone id_index directly (O(N) but unavoidable for HashMap).
         Ok(Self {
@@ -249,8 +249,8 @@ impl NodeFrame {
             .map(|field| concat_build_column(field, frames))
             .collect::<Result<_>>()?;
 
-        let batch = RecordBatch::try_new(merged_schema, merged_columns)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let batch =
+            RecordBatch::try_new(merged_schema, merged_columns).map_err(std::io::Error::other)?;
 
         // Build id_index while checking for cross-frame duplicate _id values.
         let id_col = batch
@@ -536,8 +536,7 @@ fn concat_build_column(field: &Field, frames: &[&NodeFrame]) -> Result<ArrayRef>
         .collect();
 
     let refs: Vec<&dyn Array> = owned.iter().map(|a| a.as_ref()).collect();
-    arrow::compute::concat(&refs)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e).into())
+    arrow::compute::concat(&refs).map_err(|e| std::io::Error::other(e).into())
 }
 
 fn id_string_array(batch: &RecordBatch) -> Result<&StringArray> {

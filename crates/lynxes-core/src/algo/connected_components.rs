@@ -196,7 +196,7 @@ fn build_cc_output(graph: &GraphFrame, component_ids: &[u32]) -> Result<NodeFram
     ]));
 
     let batch = RecordBatch::try_new(schema, vec![id_col, label_col, cid_col])
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
 
     NodeFrame::from_record_batch(batch)
 }

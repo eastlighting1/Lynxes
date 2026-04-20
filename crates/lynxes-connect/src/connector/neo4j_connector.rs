@@ -626,15 +626,15 @@ fn validate_hops(hops: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        BinaryOp, Direction, EdgeFrame, EdgeTypeSpec, Expr, NodeFrame, ScalarValue,
-        COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
-    };
     use arrow_array::{
         builder::{ListBuilder, StringBuilder},
         Int8Array, RecordBatch, StringArray,
     };
     use arrow_schema::{DataType, Field, Schema as ArrowSchema};
+    use lynxes_core::{
+        BinaryOp, Direction, EdgeFrame, EdgeTypeSpec, Expr, NodeFrame, ScalarValue,
+        COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
+    };
     use std::sync::Arc;
 
     // ── Mock backend ──────────────────────────────────────────────────────────
@@ -949,7 +949,7 @@ mod tests {
 
     #[tokio::test]
     async fn write_returns_unsupported_error() {
-        use crate::GraphFrame;
+        use lynxes_core::GraphFrame;
         let connector = make_connector();
         let graph = GraphFrame::new(make_mock_nodes(), make_mock_edges()).unwrap();
         let err = connector.write(&graph).await.unwrap_err();

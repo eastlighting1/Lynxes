@@ -358,7 +358,7 @@ impl Connector for FlightConnector {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FlightGraphService {
     graphs: Arc<RwLock<HashMap<String, GraphFrame>>>,
     staged_uploads: Arc<RwLock<HashMap<String, StagedUpload>>>,

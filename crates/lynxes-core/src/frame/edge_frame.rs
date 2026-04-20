@@ -265,10 +265,10 @@ impl EdgeFrame {
             .iter()
             .map(|col| arrow::compute::filter(col.as_ref(), mask))
             .collect::<std::result::Result<_, _>>()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         let filtered_batch = RecordBatch::try_new(self.data.schema_ref().clone(), filtered_columns)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         Ok(Self::from_valid_batch(filtered_batch))
     }
@@ -346,7 +346,7 @@ impl EdgeFrame {
             .collect();
 
         let new_batch = RecordBatch::try_new(Arc::new(ArrowSchema::new(new_fields)), new_columns)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         // Row set is unchanged ??clone indexes directly.
         Ok(Self {
@@ -399,8 +399,8 @@ impl EdgeFrame {
             .map(|field| concat_build_column(field, frames))
             .collect::<Result<_>>()?;
 
-        let batch = RecordBatch::try_new(merged_schema, merged_columns)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let batch =
+            RecordBatch::try_new(merged_schema, merged_columns).map_err(std::io::Error::other)?;
 
         Ok(Self::from_valid_batch(batch))
     }
@@ -603,8 +603,7 @@ fn concat_build_column(field: &Field, frames: &[&EdgeFrame]) -> Result<ArrayRef>
         .collect();
 
     let refs: Vec<&dyn Array> = owned.iter().map(|a| a.as_ref()).collect();
-    arrow::compute::concat(&refs)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e).into())
+    arrow::compute::concat(&refs).map_err(|e| std::io::Error::other(e).into())
 }
 
 fn validate_reserved_columns_present(batch: &RecordBatch) -> Result<()> {

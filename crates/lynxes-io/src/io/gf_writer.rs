@@ -350,7 +350,7 @@ mod tests {
         )
         .unwrap();
 
-        use crate::{COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE};
+        use lynxes_core::{COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE};
         let edge_schema = Arc::new(ArrowSchema::new(vec![
             Field::new(COL_EDGE_SRC, DataType::Utf8, false),
             Field::new(COL_EDGE_DST, DataType::Utf8, false),
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn direction_arrows_map_correctly() {
-        use crate::{COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE};
+        use lynxes_core::{COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE};
 
         let mut lb_n = ListBuilder::new(StringBuilder::new());
         for _ in 0..2 {

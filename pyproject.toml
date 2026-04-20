@@ -1,6 +1,6 @@
 [project]
 name = "lynxes"
-version = "1.1.0"
+version = "1.2.0"
 description = "A graph analytics engine built directly on Apache Arrow"
 readme = "README.md"
 requires-python = ">=3.10"

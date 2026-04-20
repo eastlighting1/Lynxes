@@ -24,6 +24,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+
 import numpy as np
 
 # ── dependency check ──────────────────────────────────────────────────────────

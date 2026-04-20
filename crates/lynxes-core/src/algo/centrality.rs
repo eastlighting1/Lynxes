@@ -202,7 +202,7 @@ fn brandes_parallel(graph: &GraphFrame, ec: usize, config: &BetweennessConfig) -
     let mut betweenness = vec![0.0f64; ec];
     for partial in partials {
         let partial = partial?;
-        for (score, local) in betweenness.iter_mut().zip(partial.into_iter()) {
+        for (score, local) in betweenness.iter_mut().zip(partial) {
             *score += local;
         }
     }

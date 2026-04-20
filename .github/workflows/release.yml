@@ -44,12 +44,12 @@ jobs:
           fi
           echo "Version OK: $CARGO_VER"
 
-  # ── Build wheels (matrix: 4 targets) ─────────────────────────────────────────
+  # ── Build wheels (matrix: 5 targets) ─────────────────────────────────────────
   build-wheels:
     name: Wheel · ${{ matrix.platform.name }}
     needs: validate-version
     runs-on: ${{ matrix.platform.runner }}
-    timeout-minutes: 10
+    timeout-minutes: 10  # ⏳ 추가됨: 10분 타임아웃
     strategy:
       fail-fast: false
       matrix:
@@ -66,6 +66,13 @@ jobs:
             runner: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             manylinux: manylinux_2_28
+            args: --release
+
+          # macOS x86_64 (Intel)
+          - name: macos-x86_64
+            runner: macos-13
+            target: x86_64-apple-darwin
+            manylinux: ""
             args: --release
 
           # macOS aarch64 (Apple Silicon)
@@ -163,13 +170,15 @@ jobs:
     name: Smoke test · ${{ matrix.platform.name }}
     needs: build-wheels
     runs-on: ${{ matrix.platform.runner }}
-    timeout-minutes: 10
+    timeout-minutes: 10  # ⏳ 추가됨: 10분 타임아웃
     strategy:
       fail-fast: false
       matrix:
         platform:
           - name: linux-x86_64
             runner: ubuntu-latest
+          - name: macos-x86_64
+            runner: macos-13
           - name: macos-arm64
             runner: macos-14
           - name: windows-x86_64
@@ -186,13 +195,13 @@ jobs:
       - name: Download wheel
         id: download_wheel
         uses: actions/download-artifact@v4
-        continue-on-error: true
+        continue-on-error: true  # 💡 추가됨: 아티팩트 없어도 실패 처리 안 함
         with:
           name: wheels-${{ matrix.platform.name }}
           path: dist/
 
       - name: Install wheel and test
-        if: steps.download_wheel.outcome == 'success'
+        if: steps.download_wheel.outcome == 'success'  # 💡 추가됨: 다운로드 성공 시에만 테스트
         shell: bash
         run: |
           pip install dist/*.whl pyarrow pytest
@@ -200,7 +209,7 @@ jobs:
           pytest py-lynxes/tests/unit -v --tb=short -x -q
 
       - name: Skip Test Notice
-        if: steps.download_wheel.outcome != 'success'
+        if: steps.download_wheel.outcome != 'success'  # 💡 추가됨: 스킵 시 안내 문구 출력
         run: echo "No wheel built for ${{ matrix.platform.name }}. Skipping smoke test."
 
   # ── Publish to PyPI (Trusted Publishing — no token needed) ───────────────────

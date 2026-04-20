@@ -1391,7 +1391,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "lynxes"
-version = "0.1.0"
+version = "1.2.1"
 dependencies = [
  "lynxes-connect",
  "lynxes-core",
@@ -1402,7 +1402,7 @@ dependencies = [
 
 [[package]]
 name = "lynxes-cli"
-version = "0.1.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -1418,7 +1418,7 @@ dependencies = [
 
 [[package]]
 name = "lynxes-connect"
-version = "0.1.0"
+version = "1.2.1"
 dependencies = [
  "arrow-array",
  "arrow-flight",
@@ -1440,7 +1440,7 @@ dependencies = [
 
 [[package]]
 name = "lynxes-core"
-version = "0.1.0"
+version = "1.2.1"
 dependencies = [
  "ahash",
  "arrow",
@@ -1480,7 +1480,7 @@ dependencies = [
 
 [[package]]
 name = "lynxes-io"
-version = "0.1.0"
+version = "1.2.1"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -1500,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "lynxes-lazy"
-version = "0.1.0"
+version = "1.2.1"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -1514,7 +1514,7 @@ dependencies = [
 
 [[package]]
 name = "lynxes-plan"
-version = "0.1.0"
+version = "1.2.1"
 dependencies = [
  "arrow-schema",
  "hashbrown 0.14.5",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "lynxes-python"
-version = "0.1.0"
+version = "1.2.1"
 dependencies = [
  "arrow",
  "lynxes-connect",

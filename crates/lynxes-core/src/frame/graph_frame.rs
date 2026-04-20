@@ -61,10 +61,7 @@ impl GraphFrame {
             if let Some(schema) = graph.schema.as_ref() {
                 let errors = schema.validate_graph(&graph);
                 if !errors.is_empty() {
-                    return Err(GFError::SchemaValidation {
-                        errors_len: errors.len(),
-                        errors,
-                    });
+                    return Err(GFError::schema_validation(errors));
                 }
             }
         }

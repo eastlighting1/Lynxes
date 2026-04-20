@@ -168,9 +168,9 @@ pub enum GFError {
     #[error("circular inheritance detected: {path}")]
     CircularInheritance { path: String },
 
-    #[error("schema validation failed with {errors_len} error(s)")]
+    #[error("{message}")]
     SchemaValidation {
-        errors_len: usize,
+        message: String,
         errors: Vec<SchemaValidationError>,
     },
 
@@ -198,6 +198,26 @@ pub enum GFError {
 
 /// Standard result alias for library APIs.
 pub type Result<T> = std::result::Result<T, GFError>;
+
+impl GFError {
+    /// Build a [`GFError::SchemaValidation`] with a human-readable summary of
+    /// all errors. Up to `MAX_SHOWN` individual errors are printed inline;
+    /// any remainder is counted in a trailing "… and N more" line.
+    pub fn schema_validation(errors: Vec<SchemaValidationError>) -> Self {
+        const MAX_SHOWN: usize = 10;
+        let total = errors.len();
+
+        let mut message = format!("schema validation failed with {total} error(s):\n");
+        for (i, e) in errors.iter().take(MAX_SHOWN).enumerate() {
+            message.push_str(&format!("  [{:>2}] {e}\n", i + 1));
+        }
+        if total > MAX_SHOWN {
+            message.push_str(&format!("  ... and {} more", total - MAX_SHOWN));
+        }
+
+        GFError::SchemaValidation { message, errors }
+    }
+}
 
 #[cfg(test)]
 mod tests {

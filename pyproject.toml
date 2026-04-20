@@ -19,9 +19,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Topic :: Scientific/Engineering",
 ]
-dependencies = [
-    "pandas>=2.3.3",
-]
+dependencies = []
 
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
@@ -36,13 +34,27 @@ features = ["pyo3/extension-module"]
 [tool.pytest.ini_options]
 testpaths = ["py-lynxes/tests/unit"]
 
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
 [dependency-groups]
 dev = [
     "maturin>=1.13.1",
     "pytest>=8.0",
     "pyarrow>=17.0",
+    "ruff>=0.8",
 ]
 benchmark = [
     "igraph>=0.11",
     "networkx>=3.0",
+    "numpy>=1.24",
+    "scipy>=1.15.3",
 ]

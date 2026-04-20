@@ -1,6 +1,6 @@
 [project]
 name = "lynxes"
-version = "0.1.0"
+version = "1.0.0"
 description = "A graph analytics engine built directly on Apache Arrow"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Lynxes" }]
 keywords = ["graph", "arrow", "analytics", "lynxes"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -19,10 +19,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Topic :: Scientific/Engineering",
 ]
-dependencies = [
-    "pandas>=2.3.3",
-    "scipy>=1.15.3",
-]
+dependencies = []
 
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
@@ -43,10 +40,10 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
-ignore = ["E501"]  # line length handled by formatter
+ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]  # allow assert in tests
+"tests/**" = ["S101"]
 
 [dependency-groups]
 dev = [
@@ -58,4 +55,5 @@ dev = [
 benchmark = [
     "igraph>=0.11",
     "networkx>=3.0",
+    "numpy>=1.24",
 ]

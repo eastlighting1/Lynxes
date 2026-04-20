@@ -125,6 +125,10 @@ impl ParsedGfDocument {
 
         for node in &self.nodes {
             for label in &node.labels {
+                // Labels not declared in the schema are unconstrained — skip validation.
+                if self.schema.node_schema(label).is_none() {
+                    continue;
+                }
                 let fields = self.schema.resolved_fields(label)?;
                 validate_props_against_field_defs(
                     &node.props,
@@ -143,11 +147,10 @@ impl ParsedGfDocument {
         }
 
         for edge in &self.edges {
-            let schema = self.schema.edge_schema(&edge.edge_type).ok_or_else(|| {
-                GFError::SchemaMismatch {
-                    message: format!("edge type {} is not declared in schema", edge.edge_type),
-                }
-            })?;
+            // Edge types not declared in the schema are unconstrained — skip validation.
+            let Some(schema) = self.schema.edge_schema(&edge.edge_type) else {
+                continue;
+            };
             validate_props_against_field_defs(
                 &edge.props,
                 &schema.fields,
@@ -780,19 +783,37 @@ mod tests {
     }
 
     #[test]
-    fn schema_guard_rejects_undefined_node_labels() {
+    fn schema_allows_undeclared_node_labels() {
+        // Labels not in the schema are unconstrained — they should load without error.
         let document = crate::parse_gf(
             r#"
             node Person {
                 age: Int
             }
-            (alice:Animal { age: 3 })
+            (alice:Person { age: 30 })
+            (acme:Organization { founded: 2010 })
+            "#,
+        )
+        .unwrap();
+
+        assert!(document.to_node_frame().is_ok());
+    }
+
+    #[test]
+    fn schema_guard_rejects_field_type_mismatch_for_declared_labels() {
+        // Nodes whose label IS declared must still satisfy the declared field types.
+        let document = crate::parse_gf(
+            r#"
+            node Person {
+                age: Int
+            }
+            (alice:Person { age: "not-an-int" })
             "#,
         )
         .unwrap();
 
         let err = document.to_node_frame().unwrap_err();
-        assert!(matches!(err, GFError::SchemaMismatch { .. }));
+        assert!(matches!(err, GFError::TypeMismatch { .. }));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Python Quickstart
 
-This quickstart shows the smallest useful Python workflow in Graphframe:
+This quickstart shows the smallest useful Python workflow in Lynxes:
 
 1. create a tiny `.gf` graph file
 2. load it into a `GraphFrame`
@@ -28,9 +28,9 @@ diana -[WORKS_AT]-> acme {}
 ## 2. Load the Graph
 
 ```python
-import graphframe as gf
+import lynxes as lx
 
-g = gf.read_gf("social.gf")
+g = lx.read_gf("social.gf")
 
 print("nodes:", g.node_count())
 print("edges:", g.edge_count())
@@ -49,7 +49,7 @@ Now switch to the lazy API:
 ```python
 result = (
     g.lazy()
-    .filter_nodes(gf.col("_id") == "alice")
+    .filter_nodes(lx.col("_id") == "alice")
     .expand(edge_type="KNOWS", hops=2, direction="out")
     .collect()
 )
@@ -87,7 +87,7 @@ print(ranks.column_names())
 
 ## 5. Inspect Results as Arrow
 
-Graphframe frames can be inspected as PyArrow record batches:
+Lynxes frames can be inspected as PyArrow record batches:
 
 ```python
 node_batch = result.nodes().to_pyarrow()
@@ -106,7 +106,7 @@ This is useful when you want to hand results off to Arrow-based tooling without 
 ```python
 people = (
     g.lazy()
-    .filter_nodes(gf.col("_label").contains("Person"))
+    .filter_nodes(lx.col("_label").contains("Person"))
     .collect_nodes()
 )
 ```
@@ -116,7 +116,7 @@ people = (
 ```python
 knows_edges = (
     g.lazy()
-    .filter_edges(gf.col("_type") == "KNOWS")
+    .filter_edges(lx.col("_type") == "KNOWS")
     .collect_edges()
 )
 ```
@@ -126,7 +126,7 @@ knows_edges = (
 ```python
 subgraph = (
     g.lazy()
-    .filter_nodes(gf.col("_id") == "alice")
+    .filter_nodes(lx.col("_id") == "alice")
     .expand(hops=1, direction="out")
     .collect()
 )
@@ -137,7 +137,7 @@ subgraph = (
 After this page, the next useful topics are:
 
 - file format workflows with `.gf`, `.gfb`, and parquet
-- expression building with `gf.col(...)`
+- expression building with `lx.col(...)`
 - traversal semantics and direction handling
 - graph algorithms such as PageRank, shortest path, and community detection
 

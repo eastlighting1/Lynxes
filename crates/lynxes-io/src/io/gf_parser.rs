@@ -254,6 +254,10 @@ fn parse_type_expr_text(text: &str) -> Result<GFType> {
         return Ok(GFType::Optional(Box::new(inner_type)));
     }
 
+    if text == "List" {
+        return Ok(GFType::List(Box::new(GFType::Any)));
+    }
+
     if text.starts_with("List<") && text.ends_with('>') {
         let inner = &text[5..text.len() - 1];
         let inner_type = parse_type_expr_text(inner.trim())?;

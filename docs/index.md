@@ -1,18 +1,19 @@
-# Graphframe Documentation
+# Lynxes Documentation
 
-Graphframe is a graph analytics engine built natively on Apache Arrow.
+Lynxes is a graph analytics engine built natively on Apache Arrow.
 It stores node and edge data in Arrow `RecordBatch` objects, keeps graph structure as a first-class concern, and exposes both eager graph algorithms and a lazy query API.
 
 This documentation is the user-facing entry point for the project.
-It focuses on how to install Graphframe, load data, run queries, and use the CLI.
+It focuses on how to install Lynxes, load data, run queries, and use the CLI.
 
 ## Start Here
 
-- [Install Graphframe](install.md)
+- [Install Lynxes](install.md)
 - [Python Quickstart](quickstart/python.md)
 - [CLI Quickstart](quickstart/cli.md)
+- [`.gf` Format Authoring Guide](gf_authoring_guide.md) ([한국어](gf_authoring_guide_ko.md))
 
-## What Graphframe Gives You
+## What Lynxes Gives You
 
 - Arrow-native node and edge storage
 - CSR-backed neighbor lookups for graph traversal
@@ -55,7 +56,7 @@ They are not a promise that the behavior is already shipped exactly as written.
 
 ## Project Status
 
-Graphframe is still an actively evolving project.
+Lynxes is still an actively evolving project.
 The user docs here describe the current shipped behavior of the repository, not future design goals.
 
 If a feature is not documented here, treat it as unstable until it has a dedicated guide or reference page.

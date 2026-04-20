@@ -33,12 +33,16 @@ default_directive = { "@default" ~ "(" ~ value ~ ")" }
 type_expr = {
     list_type_optional
     | list_type
+    | list_bare_optional
+    | list_bare
     | optional_scalar_type
     | base_type
 }
 optional_scalar_type = { base_type ~ "?" }
 list_type_optional = { "List" ~ "<" ~ type_expr_non_optional ~ ">" ~ "?" }
 list_type = { "List" ~ "<" ~ type_expr_non_optional ~ ">" }
+list_bare_optional = { "List" ~ "?" }
+list_bare = { "List" }
 type_expr_non_optional = { list_type | base_type }
 
 base_type = {
@@ -46,8 +50,8 @@ base_type = {
     | "Int"
     | "Float"
     | "Bool"
-    | "Date"
     | "DateTime"
+    | "Date"
     | "Duration"
     | "Any"
 }

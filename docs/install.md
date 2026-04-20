@@ -1,19 +1,6 @@
-# Install Graphframe
+# Install Lynxes
 
-This page covers the practical ways to install and verify Graphframe from the current repository state.
-
-## Naming Note
-
-This repository currently uses two names in different places:
-
-- Python import path: `graphframe`
-- Project metadata name in `pyproject.toml`: `lynxes`
-
-Until naming is unified, follow the command examples exactly and import the module as:
-
-```python
-import graphframe as gf
-```
+This page covers the practical ways to install and verify Lynxes from the current repository state.
 
 ## Requirements
 
@@ -33,24 +20,24 @@ From the repository root:
 python -m venv .venv
 .venv\Scripts\activate
 pip install maturin pyarrow pytest
-maturin develop --release -m crates/graphframe-py/Cargo.toml
+maturin develop --release -m crates/lynxes-python/Cargo.toml
 ```
 
 If you use `uv`, you can also install the development dependencies first:
 
 ```bash
 uv sync --group dev
-maturin develop --release -m crates/graphframe-py/Cargo.toml
+maturin develop --release -m crates/lynxes-python/Cargo.toml
 ```
 
-This builds the native extension and makes `graphframe` importable in the active environment.
+This builds the native extension and makes `lynxes` importable in the active environment.
 
 ## Verify the Python Install
 
 Run:
 
 ```bash
-python -c "import graphframe as gf; print(gf.__version__)"
+python -c "import lynxes as lx; print(lx.__version__)"
 ```
 
 If the import succeeds and a version prints, the Python package is ready to use.
@@ -61,30 +48,30 @@ If you only want to run the CLI during development, you do not need a separate i
 You can invoke it directly through Cargo:
 
 ```bash
-cargo run -p graphframe-cli -- --help
+cargo run -p lynxes-cli -- --help
 ```
 
 ## Install the CLI as a Standalone Command
 
-If you want a persistent `gf` command on your machine, install it from the workspace:
+If you want a persistent `lynxes` command on your machine, install it from the workspace:
 
 ```bash
-cargo install --path crates/graphframe-cli
+cargo install --path crates/lynxes-cli
 ```
 
 Then verify it with:
 
 ```bash
-gf --help
+lynxes --help
 ```
 
 ## Quick Verification Checklist
 
 Use this checklist after installation:
 
-1. `python -c "import graphframe as gf; print(gf.__version__)"`
-2. `cargo run -p graphframe-cli -- --help`
-3. If you installed the CLI globally: `gf --help`
+1. `python -c "import lynxes as lx; print(lx.__version__)"`
+2. `cargo run -p lynxes-cli -- --help`
+3. If you installed the CLI globally: `lynxes --help`
 
 ## Troubleshooting
 
@@ -100,12 +87,12 @@ Check that:
 - your Python headers and native build tools are installed
 - you are running the command from the repository root
 
-### `gf` command is not found
+### `lynxes` command is not found
 
 Either:
 
-- use `cargo run -p graphframe-cli -- ...`, or
-- install the CLI with `cargo install --path crates/graphframe-cli`
+- use `cargo run -p lynxes-cli -- ...`, or
+- install the CLI with `cargo install --path crates/lynxes-cli`
 
 ## Next Step
 

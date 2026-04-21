@@ -20,132 +20,86 @@
 
 `Lynxes` is a blazingly fast, lazy-evaluated graph analytics engine. Unlike traditional Python libraries that wrap generic structures, **Lynxes builds a graph-native engine directly over Arrow**, completely bypassing the overhead of NetworkX or igraph.
 
-## Why Lynxes
-
-- **Zero-Copy Arrow Backing** — `NodeFrame` and `EdgeFrame` directly own Apache Arrow `RecordBatch`. No intermediate copies, no Pandas/Polars dependency.
-- **Graph Structure as a First-Class Citizen** — `EdgeFrame` always maintains a Compressed Sparse Row (CSR) index. Neighbor lookups are O(degree) from day one — no full table scans.
-- **Lazy by Default** — No computation happens until you call `.collect()`. The built-in optimizer runs Predicate Pushdown, Projection Pushdown, Traversal Pruning, and Subgraph Caching before execution.
-- **Language-Agnostic Core** — The query engine, storage engine, and graph algorithms are written entirely in Rust. Python is a thin zero-overhead PyO3 wrapper.
-
 ## Quickstart
 
 ### Install
 
 ```bash
 pip install lynxes
-# or
+```
+
+or
+
+```bash
 uv add lynxes
 ```
 
-### Build from source
+For source builds and CLI use from a repository checkout, see `docs/install.md`.
 
-```bash
-git clone https://github.com/your-org/lynxes
-cd lynxes/py-lynxes
-uv run maturin develop --release
-```
-
-### Python API
+## 30-Second Quickstart
 
 ```python
 import lynxes as lx
 
-# Load from .gf text, .gfb binary, or Parquet
-g = lx.read_gf("graph.gf")
-# g = lx.read_parquet_graph("nodes.parquet", "edges.parquet")
-# g = lx.read_gfb("graph.gfb")
+g = lx.read_gf("examples/data/example_simple.gf")
 
-# Build a lazy plan — nothing executes yet
 result = (
     g.lazy()
-    .filter_nodes(lx.col("age") > 25)
-    .expand("KNOWS", hops=2, direction="out")
-    .aggregate_neighbors("KNOWS", lx.count().alias("friend_count"))
-    .sort("friend_count", descending=True)
-    .limit(10)
+    .filter_nodes(lx.col("_id") == "alice")
+    .expand(edge_type="KNOWS", hops=2, direction="out")
     .collect()
 )
 
-print(result)
+print(result.node_count(), result.edge_count())
+print(g.shortest_path("alice", "charlie"))
 ```
 
-### Pattern Matching
+## Start Here
 
-Cypher-like pattern matching over the lazy execution engine:
+- User docs: `docs/index.md`
+- Install guide: `docs/install.md`
+- Python quickstart: `docs/quickstart/python.md`
+- CLI quickstart: `docs/quickstart/cli.md`
+- Examples: `examples/README.md`
+- Benchmark guide: `docs/guides/benchmarks.md`
 
-```python
-result = (
-    g.lazy()
-    .match_pattern(
-        [
-            lx.node("person", "Person"),
-            lx.edge("WORKS_AT"),
-            lx.node("company", "Company"),
-        ],
-        where_=lx.col("person.age") > 25,
-    )
-    .collect()
-)
+## Why Lynxes
+
+Lynxes is built around an explicit memory and execution model:
+
+```mermaid
+flowchart LR
+    A[".gf / .gfb / parquet"] --> B["Arrow RecordBatch<br/>node and edge columns"]
+    B --> C["GraphFrame"]
+    C --> D["CSR adjacency index"]
+    C --> E["Lazy query plan"]
+    D --> F["Traversal and algorithms"]
+    E --> G["collect()"]
+    G --> H["Subgraph / NodeFrame / EdgeFrame"]
+    H --> I["PyArrow interop"]
 ```
 
-### Graph Algorithms
+- Arrow data stays in columnar form instead of being copied into a dataframe wrapper.
+- Graph traversal is driven by CSR adjacency, so neighbor-oriented work starts from graph structure.
+- Lazy queries build a plan first and execute only when you call `.collect()`.
+- Results still move cleanly into PyArrow when you want downstream columnar work.
 
-```python
-# PageRank
-pr = g.pagerank()                          # → NodeFrame with 'pagerank' column
+For the deeper rationale behind Arrow and CSR, start with `docs/concepts/arrow-csr.md`.
 
-# Shortest path
-path = g.shortest_path("alice", "charlie") # → ["alice", "bob", "charlie"]
+## Benchmarks
 
-# Connected components
-cc = g.connected_components()              # → NodeFrame with 'component_id' column
+Benchmark coverage is already part of the repository:
 
-# Betweenness centrality
-bc = g.betweenness_centrality()
+- Rust Criterion benches live in `crates/lynxes-core/benches`
+- Python comparison scripts against NetworkX and igraph live in `py-lynxes/tests/benchmark`
+- CI benchmark automation lives in `.github/workflows/bench.yml`
 
-# Community detection (Louvain / Label Propagation)
-cm = g.community_detection()
-```
+Run instructions and what each benchmark is intended to show are collected in `docs/guides/benchmarks.md`.
 
-### Remote Connectors
+## CLI
 
-```python
-# Neo4j (Cypher)
-g = lx.read_neo4j("bolt://localhost:7687", "neo4j", "password")
-
-# ArangoDB (AQL)
-g = lx.read_arangodb(
-    endpoint="http://localhost:8529",
-    database="mydb",
-    graph="social",
-    vertex_collection="persons",
-    edge_collection="knows",
-)
-
-# SPARQL endpoint
-g = lx.read_sparql(
-    endpoint="https://dbpedia.org/sparql",
-    node_template="SELECT ?id WHERE { ?id a <Thing> }",
-    edge_template="SELECT ?s ?o WHERE { ?s ?p ?o }",
-)
-```
-
-### Distributed Graph Partitioning
-
-```python
-# Partition a large graph across N shards
-pg = g.partition(4, strategy="hash")   # or "range" / "label"
-print(pg.n_shards)                     # 4
-print(pg.stats())                      # imbalance ratio, boundary edges, …
-
-# BFS across shard boundaries
-nodes, edges = pg.distributed_expand(["alice"], hops=2, direction="out")
-
-# Merge shards back into one GraphFrame
-merged = pg.merge()
-```
-
-### CLI
+The CLI is documented from the perspective of a GitHub repository checkout.
+Run it directly with:
 
 ```bash
 # Inspect a .gfb file

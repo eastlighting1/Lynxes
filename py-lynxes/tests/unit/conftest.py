@@ -2,33 +2,21 @@
 Shared pytest fixtures for Lynxes Python binding tests (TST-009).
 """
 
+from pathlib import Path
+
 import pytest
 
 import lynxes as gf
 
-# ── Fixture data ──────────────────────────────────────────────────────────────
 
-_SOCIAL_GF = """\
-(alice: Person { age: 30, score: 0.9 })
-(bob: Person { age: 22, score: 0.6 })
-(charlie: Person { age: 35, score: 0.75 })
-(diana: Person { age: 28, score: 0.8 })
-(acme: Company { age: 100, score: 0.5 })
-alice -[KNOWS]-> bob
-bob -[KNOWS]-> charlie
-alice -[KNOWS]-> diana
-diana -[WORKS_AT]-> acme
-"""
-
-# ── Fixtures ──────────────────────────────────────────────────────────────────
+REPO_ROOT = Path(__file__).resolve().parents[3]
+TINY_SOCIAL_GF = REPO_ROOT / "examples" / "data" / "example_simple.gf"
 
 
 @pytest.fixture(scope="session")
-def gf_path(tmp_path_factory):
-    """Write the social graph to a temp .gf file (once per session)."""
-    p = tmp_path_factory.mktemp("data") / "social.gf"
-    p.write_text(_SOCIAL_GF)
-    return str(p)
+def gf_path():
+    """Return the shared tiny social graph fixture path."""
+    return str(TINY_SOCIAL_GF)
 
 
 @pytest.fixture(scope="session")

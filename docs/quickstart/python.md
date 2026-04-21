@@ -2,35 +2,32 @@
 
 This quickstart shows the smallest useful Python workflow in Lynxes:
 
-1. create a tiny `.gf` graph file
+1. pick a small `.gf` graph
 2. load it into a `GraphFrame`
 3. run a lazy traversal query
 4. run one built-in algorithm
 5. inspect the result as Arrow data
 
-## 1. Create a Small Graph
+Source examples:
 
-Save the following as `social.gf`:
+- [examples/python/tutorials/01_read_and_inspect.py](../../examples/python/tutorials/01_read_and_inspect.py)
+- [examples/python/tutorials/02_lazy_expand.py](../../examples/python/tutorials/02_lazy_expand.py)
+- [examples/python/tutorials/03_first_algorithm.py](../../examples/python/tutorials/03_first_algorithm.py)
 
-```gf
-(alice :Person { age: 30 })
-(bob :Person { age: 25 })
-(charlie :Person { age: 35 })
-(diana :Person { age: 28 })
-(acme :Company {})
+## 1. Pick an Input Graph
 
-alice -[KNOWS]-> bob {}
-alice -[KNOWS]-> diana {}
-bob -[KNOWS]-> charlie {}
-diana -[WORKS_AT]-> acme {}
-```
+If you are working from a GitHub checkout, reuse the shared example file:
+
+`examples/data/example_simple.gf`
+
+If you installed only from PyPI, create a local `social.gf` file with the same contents as that example.
 
 ## 2. Load the Graph
 
 ```python
 import lynxes as lx
 
-g = lx.read_gf("social.gf")
+g = lx.read_gf("examples/data/example_simple.gf")
 
 print("nodes:", g.node_count())
 print("edges:", g.edge_count())

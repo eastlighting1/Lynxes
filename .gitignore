@@ -42,3 +42,6 @@ target-*/
 
 # Local scratch
 *.bak
+after.md
+design_proposal_gnn_kg.md
+docs/gf_authoring_guide_ko.md

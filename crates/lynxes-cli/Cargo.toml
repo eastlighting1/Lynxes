@@ -6,6 +6,11 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[[bin]]
+name = "lynxes-cli"
+path = "src/main.rs"
+bench = false
+
 [dependencies]
 anyhow = { workspace = true }
 arrow-array  = { workspace = true }

@@ -6,6 +6,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[lib]
+bench = false
+
 [dependencies]
 arrow-array = { workspace = true }
 arrow-schema = { workspace = true }

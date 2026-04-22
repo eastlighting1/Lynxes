@@ -1877,43 +1877,66 @@ fn single_hop_pattern_candidates(
     candidates
 }
 
-fn collect_variable_hop_candidates(
-    edges: &EdgeFrame,
-    current_idx: u32,
-    depth: u32,
-    step: &PatternStep,
-    constraint: &PatternStepConstraint,
-    visited: &mut HashSet<u32>,
-    seen: &mut HashSet<u32>,
-    output: &mut Vec<PatternCandidate>,
-) {
-    if depth >= constraint.min_hops && seen.insert(current_idx) {
-        output.push(PatternCandidate {
-            node_idx: current_idx,
-            edge_row: None,
-        });
-    }
-    if depth == constraint.max_hops {
-        return;
-    }
+struct VariableHopCollector<'a> {
+    edges: &'a EdgeFrame,
+    step: &'a PatternStep,
+    constraint: &'a PatternStepConstraint,
+    seen: HashSet<u32>,
+    output: Vec<PatternCandidate>,
+}
 
-    for candidate in single_hop_pattern_candidates(edges, current_idx, step) {
-        if !visited.insert(candidate.node_idx) {
-            continue;
-        }
-
-        collect_variable_hop_candidates(
+impl<'a> VariableHopCollector<'a> {
+    fn new(
+        edges: &'a EdgeFrame,
+        step: &'a PatternStep,
+        constraint: &'a PatternStepConstraint,
+    ) -> Self {
+        Self {
             edges,
-            candidate.node_idx,
-            depth + 1,
             step,
             constraint,
-            visited,
-            seen,
-            output,
-        );
-        visited.remove(&candidate.node_idx);
+            seen: HashSet::new(),
+            output: Vec::new(),
+        }
     }
+
+    fn collect_from(&mut self, current_idx: u32, depth: u32, visited: &mut HashSet<u32>) {
+        if depth >= self.constraint.min_hops && self.seen.insert(current_idx) {
+            self.output.push(PatternCandidate {
+                node_idx: current_idx,
+                edge_row: None,
+            });
+        }
+        if depth == self.constraint.max_hops {
+            return;
+        }
+
+        for candidate in single_hop_pattern_candidates(self.edges, current_idx, self.step) {
+            if !visited.insert(candidate.node_idx) {
+                continue;
+            }
+
+            self.collect_from(candidate.node_idx, depth + 1, visited);
+            visited.remove(&candidate.node_idx);
+        }
+    }
+
+    fn finish(self) -> Vec<PatternCandidate> {
+        self.output
+    }
+}
+
+fn variable_hop_pattern_candidates(
+    edges: &EdgeFrame,
+    from_idx: u32,
+    step: &PatternStep,
+    constraint: &PatternStepConstraint,
+) -> Vec<PatternCandidate> {
+    let mut collector = VariableHopCollector::new(edges, step, constraint);
+    let mut visited = HashSet::new();
+    visited.insert(from_idx);
+    collector.collect_from(from_idx, 0, &mut visited);
+    collector.finish()
 }
 
 fn pattern_candidates(
@@ -1926,23 +1949,7 @@ fn pattern_candidates(
         return single_hop_pattern_candidates(edges, from_idx, step);
     }
 
-    let mut visited = HashSet::new();
-    visited.insert(from_idx);
-    let mut seen = HashSet::new();
-    let mut output = Vec::new();
-
-    collect_variable_hop_candidates(
-        edges,
-        from_idx,
-        0,
-        step,
-        constraint,
-        &mut visited,
-        &mut seen,
-        &mut output,
-    );
-
-    output
+    variable_hop_pattern_candidates(edges, from_idx, step, constraint)
 }
 
 /// Expands one typed pattern step over an existing binding table.

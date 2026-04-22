@@ -6,6 +6,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[lib]
+bench = false
+
 [dependencies]
 # Wasm-safe dependencies (available on all targets)
 arrow = { workspace = true }

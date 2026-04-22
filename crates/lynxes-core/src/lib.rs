@@ -34,7 +34,8 @@ pub use crate::query::optimizer::{
 };
 pub use crate::query::{
     AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan, PartitionStrategy, Pattern,
-    PatternStep, PlanDomain, ScalarValue, StringOp, UnaryOp,
+    PatternNodeConstraint, PatternStep, PatternStepConstraint, PlanDomain, ScalarValue, StringOp,
+    UnaryOp,
 };
 pub use crate::schema::{EdgeSchema, FieldDef, GFType, GFValue, NodeSchema, Schema};
 pub use crate::types::{

@@ -14,11 +14,11 @@ use hashbrown::{HashMap, HashSet};
 
 use lynxes_core::{
     Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, Result, COL_EDGE_DIRECTION, COL_EDGE_DST,
-    COL_EDGE_SRC, COL_EDGE_TYPE,
+    COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_LABEL,
 };
 use lynxes_plan::{
     AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan, Pattern, PatternStep,
-    ScalarValue, StringOp, UnaryOp,
+    PatternStepConstraint, ScalarValue, StringOp, UnaryOp,
 };
 
 #[derive(Debug, Clone)]
@@ -32,11 +32,11 @@ pub(crate) enum ExecutionValue {
 
 /// One row of alias bindings produced during `PatternMatch` execution.
 ///
-/// The value space is intentionally fixed to `u32` so the executor can carry
-/// lightweight graph-local identifiers while it is still in the step-expansion
-/// phase. Node aliases use the `EdgeFrame` local compact node index. When edge
-/// aliases start participating in execution, they will use edge row ids in the
-/// same `u32` slot space.
+/// The value space is intentionally fixed to `Option<u32>` so the executor can
+/// carry lightweight graph-local identifiers while still representing
+/// unmatched optional aliases as `None`. Node aliases use the `EdgeFrame`
+/// local compact node index. Edge aliases use edge row ids in the same `u32`
+/// slot space.
 ///
 /// Alias collision rule:
 /// if an alias is encountered again with the same bound value, the binding row
@@ -44,7 +44,7 @@ pub(crate) enum ExecutionValue {
 /// a different value, that row is rejected because the pattern would be asking
 /// one alias to represent two different graph elements at once.
 #[allow(dead_code)]
-type PatternBindingRow = HashMap<String, u32>;
+type PatternBindingRow = HashMap<String, Option<u32>>;
 
 /// The full set of rows emitted by a `PatternMatch` executor pass.
 #[allow(dead_code)]
@@ -58,11 +58,24 @@ enum PatternAliasKind {
 
 #[allow(dead_code)]
 fn bind_pattern_alias(row: &mut PatternBindingRow, alias: &str, value: u32) -> Result<()> {
+    bind_pattern_alias_value(row, alias, Some(value))
+}
+
+#[allow(dead_code)]
+fn bind_pattern_alias_null(row: &mut PatternBindingRow, alias: &str) -> Result<()> {
+    bind_pattern_alias_value(row, alias, None)
+}
+
+fn bind_pattern_alias_value(
+    row: &mut PatternBindingRow,
+    alias: &str,
+    value: Option<u32>,
+) -> Result<()> {
     match row.get(alias).copied() {
         Some(bound) if bound == value => Ok(()),
         Some(bound) => Err(GFError::InvalidConfig {
             message: format!(
-                "pattern alias '{alias}' is already bound to {bound}, cannot rebind to {value}"
+                "pattern alias '{alias}' is already bound to {bound:?}, cannot rebind to {value:?}"
             ),
         }),
         None => {
@@ -276,7 +289,7 @@ fn unsupported_plan(message: &str) -> GFError {
     }
 }
 
-// ── Hint dispatch ─────────────────────────────────────────────────────────────
+// ?? Hint dispatch ?????????????????????????????????????????????????????????????
 
 fn execute_hint(
     hint: &ExecutionHint,
@@ -330,7 +343,7 @@ fn execute_limit_aware(
                 Some(n),
             )?))
         }
-        // Hint not directly above an expansion node — fall through without limit.
+        // Hint not directly above an expansion node ??fall through without limit.
         _ => execute(input, source_graph),
     }
 }
@@ -363,7 +376,7 @@ fn execute_top_k(
                 )),
             }
         }
-        // Hint not directly above a Sort — fall through.
+        // Hint not directly above a Sort ??fall through.
         _ => execute(input, source_graph),
     }
 }
@@ -390,7 +403,7 @@ fn extract_node_frontier(val: ExecutionValue, context: &str) -> Result<NodeFrame
 fn top_k_batch(batch: &RecordBatch, by: &str, descending: bool, k: usize) -> Result<RecordBatch> {
     let n = batch.num_rows();
     if k >= n {
-        // Nothing to save — just do a regular sort.
+        // Nothing to save ??just do a regular sort.
         return reorder_batch(batch, by, descending);
     }
 
@@ -411,7 +424,7 @@ fn top_k_batch(batch: &RecordBatch, by: &str, descending: bool, k: usize) -> Res
     // `select_nth_unstable_by` rearranges `indexed` so that elements at
     // positions 0..=k-1 are the k "best" entries (in some order) and the
     // element at position k-1 is in its final sorted position.
-    // Average O(n); worst-case O(n²) but that is rare in practice.
+    // Average O(n); worst-case O(n짼) but that is rare in practice.
     indexed.select_nth_unstable_by(k - 1, |a, b| {
         // Compare in the direction we want to KEEP (ascending for min-heap,
         // descending for max-heap).  We want the k entries that would appear
@@ -447,7 +460,7 @@ fn limit_edges(edges: &EdgeFrame, n: usize) -> Result<EdgeFrame> {
 /// This is the inner kernel shared by the serial wrapper (`expand_graph`) and
 /// the parallel shard runner (`execute_partition_parallel`).
 ///
-/// Complexity: O(hops × Σ degree(v) for v in frontier).
+/// Complexity: O(hops 횞 誇 degree(v) for v in frontier).
 /// When `stop_at = Some(n)` halts once visited reaches n nodes.
 fn expand_graph_raw(
     graph: &GraphFrame,
@@ -659,8 +672,8 @@ fn expand_graph(
 /// result.
 ///
 /// Correctness: a node reachable from the full frontier within `hops` hops is
-/// reachable from at least one shard's subset of the frontier → it appears in
-/// at least one shard's visited set → it appears in the union.
+/// reachable from at least one shard's subset of the frontier ??it appears in
+/// at least one shard's visited set ??it appears in the union.
 ///
 /// Trade-off: nodes reachable from multiple shards are expanded redundantly.
 /// This is acceptable when the frontier is large relative to the reachable set,
@@ -1759,6 +1772,179 @@ fn matches_edge_type(edge_type: &str, spec: &EdgeTypeSpec) -> bool {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PatternCandidate {
+    node_idx: u32,
+    edge_row: Option<u32>,
+}
+
+fn pattern_node_matches_constraint(
+    graph: &GraphFrame,
+    edge_node_ids: &[String],
+    node_idx: u32,
+    alias: &str,
+    pattern: &Pattern,
+) -> Result<bool> {
+    let Some(constraint) = pattern.node_constraint(alias) else {
+        return Ok(true);
+    };
+    let Some(label) = constraint.label.as_deref() else {
+        return Ok(true);
+    };
+
+    let node_id = edge_node_ids
+        .get(node_idx as usize)
+        .map(String::as_str)
+        .ok_or_else(|| GFError::InvalidConfig {
+            message: format!(
+                "pattern alias '{alias}' is not a valid edge-local node index: {node_idx}"
+            ),
+        })?;
+    let node_row = graph
+        .nodes()
+        .row_index(node_id)
+        .ok_or_else(|| GFError::NodeNotFound {
+            id: node_id.to_owned(),
+        })?;
+
+    match read_column_value(
+        graph.nodes().to_record_batch(),
+        node_row as usize,
+        COL_NODE_LABEL,
+    )? {
+        Value::List(values) => Ok(values
+            .iter()
+            .any(|value| matches!(value, Value::String(candidate) if candidate == label))),
+        other => Err(GFError::TypeMismatch {
+            message: format!("node label column must be a list, got {other:?}"),
+        }),
+    }
+}
+
+fn bind_optional_pattern_step(
+    row: &PatternBindingRow,
+    step: &PatternStep,
+) -> Result<Option<PatternBindingRow>> {
+    let mut next = row.clone();
+    if bind_pattern_alias_null(&mut next, &step.to_alias).is_err() {
+        return Ok(None);
+    }
+    if let Some(edge_alias) = step.edge_alias.as_deref() {
+        if bind_pattern_alias_null(&mut next, edge_alias).is_err() {
+            return Ok(None);
+        }
+    }
+    Ok(Some(next))
+}
+
+fn single_hop_pattern_candidates(
+    edges: &EdgeFrame,
+    from_idx: u32,
+    step: &PatternStep,
+) -> Vec<PatternCandidate> {
+    let mut candidates = Vec::new();
+
+    if matches!(step.direction, Direction::Out | Direction::Both) {
+        for (&dst_idx, &edge_row) in edges
+            .out_neighbors(from_idx)
+            .iter()
+            .zip(edges.out_edge_ids(from_idx).iter())
+        {
+            if matches_edge_type(edges.edge_type_at(edge_row), &step.edge_type) {
+                candidates.push(PatternCandidate {
+                    node_idx: dst_idx,
+                    edge_row: Some(edge_row),
+                });
+            }
+        }
+    }
+
+    if matches!(step.direction, Direction::In | Direction::Both) {
+        for (&src_idx, &edge_row) in edges
+            .in_neighbors(from_idx)
+            .iter()
+            .zip(edges.in_edge_ids(from_idx).iter())
+        {
+            if matches_edge_type(edges.edge_type_at(edge_row), &step.edge_type) {
+                candidates.push(PatternCandidate {
+                    node_idx: src_idx,
+                    edge_row: Some(edge_row),
+                });
+            }
+        }
+    }
+
+    candidates
+}
+
+fn collect_variable_hop_candidates(
+    edges: &EdgeFrame,
+    current_idx: u32,
+    depth: u32,
+    step: &PatternStep,
+    constraint: &PatternStepConstraint,
+    visited: &mut HashSet<u32>,
+    seen: &mut HashSet<u32>,
+    output: &mut Vec<PatternCandidate>,
+) {
+    if depth >= constraint.min_hops && seen.insert(current_idx) {
+        output.push(PatternCandidate {
+            node_idx: current_idx,
+            edge_row: None,
+        });
+    }
+    if depth == constraint.max_hops {
+        return;
+    }
+
+    for candidate in single_hop_pattern_candidates(edges, current_idx, step) {
+        if !visited.insert(candidate.node_idx) {
+            continue;
+        }
+
+        collect_variable_hop_candidates(
+            edges,
+            candidate.node_idx,
+            depth + 1,
+            step,
+            constraint,
+            visited,
+            seen,
+            output,
+        );
+        visited.remove(&candidate.node_idx);
+    }
+}
+
+fn pattern_candidates(
+    edges: &EdgeFrame,
+    from_idx: u32,
+    step: &PatternStep,
+    constraint: &PatternStepConstraint,
+) -> Vec<PatternCandidate> {
+    if constraint.min_hops == 1 && constraint.max_hops == 1 {
+        return single_hop_pattern_candidates(edges, from_idx, step);
+    }
+
+    let mut visited = HashSet::new();
+    visited.insert(from_idx);
+    let mut seen = HashSet::new();
+    let mut output = Vec::new();
+
+    collect_variable_hop_candidates(
+        edges,
+        from_idx,
+        0,
+        step,
+        constraint,
+        &mut visited,
+        &mut seen,
+        &mut output,
+    );
+
+    output
+}
+
 /// Expands one typed pattern step over an existing binding table.
 ///
 /// Each input row must already bind `step.from_alias` to an `EdgeFrame` local
@@ -1774,10 +1960,14 @@ fn matches_edge_type(edge_type: &str, spec: &EdgeTypeSpec) -> bool {
 #[allow(dead_code)]
 fn execute_pattern_step(
     graph: &GraphFrame,
+    pattern: &Pattern,
+    step_index: usize,
     step: &PatternStep,
     input: &PatternBindings,
 ) -> Result<PatternBindings> {
     let edges = graph.edges();
+    let edge_node_ids = build_edge_node_ids(edges)?;
+    let step_constraint = pattern.step_constraint(step_index);
     let mut output = Vec::new();
 
     for row in input {
@@ -1791,19 +1981,49 @@ fn execute_pattern_step(
                     ),
                 })?;
 
-        for (neighbor_idx, edge_row) in pattern_candidates(edges, from_idx, step) {
+        let Some(from_idx) = from_idx else {
+            if step_constraint.optional {
+                if let Some(next) = bind_optional_pattern_step(row, step)? {
+                    output.push(next);
+                }
+            }
+            continue;
+        };
+
+        let mut matched = false;
+        for candidate in pattern_candidates(edges, from_idx, step, step_constraint) {
+            if !pattern_node_matches_constraint(
+                graph,
+                &edge_node_ids,
+                candidate.node_idx,
+                &step.to_alias,
+                pattern,
+            )? {
+                continue;
+            }
+
             let mut next = row.clone();
 
-            if bind_pattern_alias(&mut next, &step.to_alias, neighbor_idx).is_err() {
+            if bind_pattern_alias(&mut next, &step.to_alias, candidate.node_idx).is_err() {
                 continue;
             }
             if let Some(edge_alias) = step.edge_alias.as_deref() {
+                let Some(edge_row) = candidate.edge_row else {
+                    continue;
+                };
                 if bind_pattern_alias(&mut next, edge_alias, edge_row).is_err() {
                     continue;
                 }
             }
 
+            matched = true;
             output.push(next);
+        }
+
+        if step_constraint.optional && !matched {
+            if let Some(next) = bind_optional_pattern_step(row, step)? {
+                output.push(next);
+            }
         }
     }
 
@@ -1813,16 +2033,16 @@ fn execute_pattern_step(
 #[allow(dead_code)]
 fn execute_pattern_steps(
     graph: &GraphFrame,
-    steps: &[PatternStep],
+    pattern: &Pattern,
     seed_bindings: &PatternBindings,
 ) -> Result<PatternBindings> {
     let mut current = seed_bindings.clone();
 
-    for step in steps {
+    for (step_index, step) in pattern.steps.iter().enumerate() {
         if current.is_empty() {
             break;
         }
-        current = execute_pattern_step(graph, step, &current)?;
+        current = execute_pattern_step(graph, pattern, step_index, step, &current)?;
     }
 
     Ok(current)
@@ -1958,6 +2178,9 @@ fn read_pattern_field_value(
         .ok_or_else(|| GFError::InvalidConfig {
             message: format!("pattern predicate requires alias '{alias}' to be bound"),
         })?;
+    let Some(bound) = bound else {
+        return Ok(Value::Null);
+    };
 
     let node_has_field = graph.nodes().schema().field_with_name(field).is_ok();
     let edge_has_field = graph.edges().schema().field_with_name(field).is_ok();
@@ -2055,10 +2278,12 @@ fn materialize_pattern_bindings(
                 .iter()
                 .map(|row| read_pattern_field_value(graph, row, &alias, field.name()))
                 .collect::<Result<Vec<_>>>()?;
+            let nullable =
+                field.is_nullable() || values.iter().any(|value| matches!(value, Value::Null));
             fields.push(Field::new(
                 &qualified_name,
                 field.data_type().clone(),
-                field.is_nullable(),
+                nullable,
             ));
             columns.push(build_value_array(field.data_type(), values)?);
         }
@@ -2066,6 +2291,34 @@ fn materialize_pattern_bindings(
 
     RecordBatch::try_new(Arc::new(ArrowSchema::new(fields)), columns)
         .map_err(|error| GFError::IoError(std::io::Error::other(error)))
+}
+
+fn validate_pattern_support(pattern: &Pattern) -> Result<()> {
+    for (index, step) in pattern.steps.iter().enumerate() {
+        let constraint = pattern.step_constraint(index);
+        if constraint.min_hops == 0 {
+            return Err(GFError::InvalidConfig {
+                message: format!("pattern step {index} must use min_hops >= 1"),
+            });
+        }
+        if constraint.max_hops < constraint.min_hops {
+            return Err(GFError::InvalidConfig {
+                message: format!(
+                    "pattern step {index} has max_hops {} smaller than min_hops {}",
+                    constraint.max_hops, constraint.min_hops
+                ),
+            });
+        }
+        if step.edge_alias.is_some() && constraint.max_hops > 1 {
+            return Err(GFError::UnsupportedOperation {
+                message: format!(
+                    "pattern step {index} cannot bind an edge alias across multi-hop traversal"
+                ),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -2080,53 +2333,33 @@ fn execute_pattern_match(
             message: "PatternMatch requires at least one step".to_owned(),
         });
     }
+    validate_pattern_support(pattern)?;
 
     let first_step = &pattern.steps[0];
+    let edge_node_ids = build_edge_node_ids(graph.edges())?;
     let mut seed_bindings = PatternBindings::new();
     for anchor_id in anchors.id_column().iter().flatten() {
         let Some(edge_local_idx) = graph.edges().node_row_idx(anchor_id) else {
             continue;
         };
+        if !pattern_node_matches_constraint(
+            graph,
+            &edge_node_ids,
+            edge_local_idx,
+            &first_step.from_alias,
+            pattern,
+        )? {
+            continue;
+        }
 
         let mut row = PatternBindingRow::new();
         bind_pattern_alias(&mut row, &first_step.from_alias, edge_local_idx)?;
         seed_bindings.push(row);
     }
 
-    let bindings = execute_pattern_steps(graph, &pattern.steps, &seed_bindings)?;
+    let bindings = execute_pattern_steps(graph, pattern, &seed_bindings)?;
     let filtered = apply_pattern_where(graph, &bindings, where_)?;
     materialize_pattern_bindings(graph, &pattern.steps, &filtered)
-}
-
-#[allow(dead_code)]
-fn pattern_candidates(edges: &EdgeFrame, from_idx: u32, step: &PatternStep) -> Vec<(u32, u32)> {
-    let mut candidates = Vec::new();
-
-    if matches!(step.direction, Direction::Out | Direction::Both) {
-        for (&dst_idx, &edge_row) in edges
-            .out_neighbors(from_idx)
-            .iter()
-            .zip(edges.out_edge_ids(from_idx).iter())
-        {
-            if matches_edge_type(edges.edge_type_at(edge_row), &step.edge_type) {
-                candidates.push((dst_idx, edge_row));
-            }
-        }
-    }
-
-    if matches!(step.direction, Direction::In | Direction::Both) {
-        for (&src_idx, &edge_row) in edges
-            .in_neighbors(from_idx)
-            .iter()
-            .zip(edges.in_edge_ids(from_idx).iter())
-        {
-            if matches_edge_type(edges.edge_type_at(edge_row), &step.edge_type) {
-                candidates.push((src_idx, edge_row));
-            }
-        }
-    }
-
-    candidates
 }
 
 fn sort_nodes(nodes: &NodeFrame, by: &str, descending: bool) -> Result<NodeFrame> {
@@ -2563,13 +2796,13 @@ mod tests {
         assert_eq!(counts.value(0), 2); // alice knows bob + charlie
     }
 
-    // ── OPT-002: EarlyTermination hint tests ─────────────────────────────────
+    // ?? OPT-002: EarlyTermination hint tests ?????????????????????????????????
 
     /// `LimitAware { n=2 }` wrapping an Expand should stop BFS once the visited
     /// set reaches 2 nodes (the seed "alice" counts as 1 before any hops).
     #[test]
     fn limit_aware_expand_stops_early() {
-        // demo_graph: alice→bob, alice→charlie, bob→acme
+        // demo_graph: alice?뭕ob, alice?뭖harlie, bob?뭓cme
         // Without a limit all 4 nodes would be reachable from alice in 2 hops.
         // Seed the expansion from alice only (FilterNodes before Expand).
         let graph = Arc::new(demo_graph());
@@ -2675,7 +2908,7 @@ mod tests {
         // demo_graph seeded from alice only.
         // Pattern: alice -KNOWS-> {bob, charlie} -WORKS_AT-> {acme}
         // Without limit: visited = {alice, bob, charlie, acme} (4 nodes).
-        // With LimitAware n=2: after step 1 visited = {alice, bob, charlie} (3 ≥ 2),
+        // With LimitAware n=2: after step 1 visited = {alice, bob, charlie} (3 ??2),
         // so the step-level break fires and acme is never reached.
         let graph = Arc::new(demo_graph());
         let alice_only = Box::new(LogicalPlan::FilterNodes {
@@ -2807,7 +3040,7 @@ mod tests {
         }
     }
 
-    /// `PartitionParallel` hint is a no-op at this stage — the plan beneath
+    /// `PartitionParallel` hint is a no-op at this stage ??the plan beneath
     /// it should execute normally.
     #[test]
     fn partition_parallel_hint_falls_through() {
@@ -2838,10 +3071,10 @@ mod tests {
         assert_eq!(nodes.id_column().value(0), "alice");
     }
 
-    // ── OPT-003: PartitionParallel executor tests ─────────────────────────────
+    // ?? OPT-003: PartitionParallel executor tests ?????????????????????????????
 
     /// `PartitionParallel` + `Expand` must produce the same result as a serial
-    /// `Expand` — correctness is the baseline requirement for any parallelism.
+    /// `Expand` ??correctness is the baseline requirement for any parallelism.
     #[test]
     fn partition_parallel_expand_matches_serial() {
         let graph = Arc::new(demo_graph());
@@ -2890,8 +3123,8 @@ mod tests {
         );
     }
 
-    /// When the frontier is tiny (below the 2 × n_threads threshold) the
-    /// parallel path falls back to serial — the result must still be correct.
+    /// When the frontier is tiny (below the 2 횞 n_threads threshold) the
+    /// parallel path falls back to serial ??the result must still be correct.
     #[test]
     fn partition_parallel_expand_serial_fallback_is_correct() {
         // Single-node frontier: always below the threshold.
@@ -2927,7 +3160,7 @@ mod tests {
             panic!("expected graph result");
         };
 
-        // alice→bob→acme and alice→charlie; all 4 nodes reachable in 2 hops.
+        // alice?뭕ob?뭓cme and alice?뭖harlie; all 4 nodes reachable in 2 hops.
         assert_eq!(g.node_count(), 4);
         for id in ["alice", "bob", "charlie", "acme"] {
             assert!(
@@ -2938,8 +3171,8 @@ mod tests {
     }
 
     /// Expanding with `PartitionParallel` and a type filter must honour the
-    /// edge-type filter — same as serial.  We seed from alice only so that the
-    /// filter is exercised: alice→{bob,charlie} are KNOWS, bob→acme is WORKS_AT.
+    /// edge-type filter ??same as serial.  We seed from alice only so that the
+    /// filter is exercised: alice??bob,charlie} are KNOWS, bob?뭓cme is WORKS_AT.
     #[test]
     fn partition_parallel_expand_respects_edge_type_filter() {
         let graph = Arc::new(demo_graph());
@@ -3004,6 +3237,14 @@ mod tests {
         );
     }
 
+    fn assert_alias_value(row: &PatternBindingRow, alias: &str, value: Option<u32>) {
+        assert_eq!(row.get(alias), Some(&value));
+    }
+
+    fn make_pattern(steps: Vec<PatternStep>) -> Pattern {
+        Pattern::new(steps)
+    }
+
     #[test]
     fn pattern_binding_row_accepts_fresh_aliases() {
         let mut row = PatternBindingRow::new();
@@ -3011,8 +3252,8 @@ mod tests {
         bind_pattern_alias(&mut row, "a", 0).unwrap();
         bind_pattern_alias(&mut row, "b", 3).unwrap();
 
-        assert_eq!(row.get("a"), Some(&0));
-        assert_eq!(row.get("b"), Some(&3));
+        assert_alias_value(&row, "a", Some(0));
+        assert_alias_value(&row, "b", Some(3));
     }
 
     #[test]
@@ -3023,7 +3264,7 @@ mod tests {
         bind_pattern_alias(&mut row, "a", 2).unwrap();
 
         assert_eq!(row.len(), 1);
-        assert_eq!(row.get("a"), Some(&2));
+        assert_alias_value(&row, "a", Some(2));
     }
 
     #[test]
@@ -3036,7 +3277,7 @@ mod tests {
         assert!(
             matches!(err, GFError::InvalidConfig { message } if message.contains("pattern alias 'a'"))
         );
-        assert_eq!(row.get("a"), Some(&1));
+        assert_alias_value(&row, "a", Some(1));
     }
 
     #[test]
@@ -3047,7 +3288,7 @@ mod tests {
         bindings.push(row);
 
         assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings[0].get("seed"), Some(&7));
+        assert_alias_value(&bindings[0], "seed", Some(7));
     }
 
     #[test]
@@ -3063,15 +3304,16 @@ mod tests {
 
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "a", 0).unwrap();
-        let bindings = execute_pattern_step(&graph, &step, &vec![seed]).unwrap();
+        let pattern = make_pattern(vec![step.clone()]);
+        let bindings = execute_pattern_step(&graph, &pattern, 0, &step, &vec![seed]).unwrap();
 
         assert_eq!(bindings.len(), 2);
-        assert_eq!(bindings[0].get("a"), Some(&0));
-        assert_eq!(bindings[0].get("e"), Some(&0));
-        assert_eq!(bindings[0].get("b"), Some(&1));
-        assert_eq!(bindings[1].get("a"), Some(&0));
-        assert_eq!(bindings[1].get("e"), Some(&1));
-        assert_eq!(bindings[1].get("b"), Some(&2));
+        assert_alias_value(&bindings[0], "a", Some(0));
+        assert_alias_value(&bindings[0], "e", Some(0));
+        assert_alias_value(&bindings[0], "b", Some(1));
+        assert_alias_value(&bindings[1], "a", Some(0));
+        assert_alias_value(&bindings[1], "e", Some(1));
+        assert_alias_value(&bindings[1], "b", Some(2));
     }
 
     #[test]
@@ -3087,12 +3329,13 @@ mod tests {
 
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "c", 2).unwrap();
-        let bindings = execute_pattern_step(&graph, &step, &vec![seed]).unwrap();
+        let pattern = make_pattern(vec![step.clone()]);
+        let bindings = execute_pattern_step(&graph, &pattern, 0, &step, &vec![seed]).unwrap();
 
         assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings[0].get("c"), Some(&2));
-        assert_eq!(bindings[0].get("e"), Some(&1));
-        assert_eq!(bindings[0].get("a"), Some(&0));
+        assert_alias_value(&bindings[0], "c", Some(2));
+        assert_alias_value(&bindings[0], "e", Some(1));
+        assert_alias_value(&bindings[0], "a", Some(0));
     }
 
     #[test]
@@ -3109,7 +3352,8 @@ mod tests {
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "a", 0).unwrap();
         bind_pattern_alias(&mut seed, "b", 9).unwrap();
-        let bindings = execute_pattern_step(&graph, &step, &vec![seed]).unwrap();
+        let pattern = make_pattern(vec![step.clone()]);
+        let bindings = execute_pattern_step(&graph, &pattern, 0, &step, &vec![seed]).unwrap();
 
         assert!(bindings.is_empty());
     }
@@ -3136,14 +3380,15 @@ mod tests {
 
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "a", 0).unwrap();
-        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+        let pattern = make_pattern(steps);
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
 
         assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings[0].get("a"), Some(&0));
-        assert_eq!(bindings[0].get("b"), Some(&1));
-        assert_eq!(bindings[0].get("c"), Some(&3));
-        assert_eq!(bindings[0].get("e1"), Some(&0));
-        assert_eq!(bindings[0].get("e2"), Some(&2));
+        assert_alias_value(&bindings[0], "a", Some(0));
+        assert_alias_value(&bindings[0], "b", Some(1));
+        assert_alias_value(&bindings[0], "c", Some(3));
+        assert_alias_value(&bindings[0], "e1", Some(0));
+        assert_alias_value(&bindings[0], "e2", Some(2));
     }
 
     #[test]
@@ -3175,7 +3420,8 @@ mod tests {
 
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "a", 0).unwrap();
-        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+        let pattern = make_pattern(steps);
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
 
         assert!(bindings.is_empty());
     }
@@ -3203,13 +3449,101 @@ mod tests {
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "seed", 42).unwrap();
         bind_pattern_alias(&mut seed, "a", 0).unwrap();
-        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+        let pattern = make_pattern(steps);
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
 
         assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings[0].get("seed"), Some(&42));
-        assert_eq!(bindings[0].get("a"), Some(&0));
-        assert_eq!(bindings[0].get("b"), Some(&1));
-        assert_eq!(bindings[0].get("c"), Some(&3));
+        assert_alias_value(&bindings[0], "seed", Some(42));
+        assert_alias_value(&bindings[0], "a", Some(0));
+        assert_alias_value(&bindings[0], "b", Some(1));
+        assert_alias_value(&bindings[0], "c", Some(3));
+    }
+
+    #[test]
+    fn execute_pattern_steps_supports_exact_multi_hop_constraints() {
+        let graph = demo_graph();
+        let pattern = Pattern::with_constraints(
+            vec![PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: None,
+                edge_type: EdgeTypeSpec::Any,
+                direction: Direction::Out,
+                to_alias: "c".to_owned(),
+            }],
+            std::collections::BTreeMap::new(),
+            vec![lynxes_core::PatternStepConstraint {
+                optional: false,
+                min_hops: 2,
+                max_hops: 2,
+            }],
+        )
+        .unwrap();
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
+
+        assert_eq!(bindings.len(), 1);
+        assert_alias_value(&bindings[0], "a", Some(0));
+        assert_alias_value(&bindings[0], "c", Some(3));
+    }
+
+    #[test]
+    fn execute_pattern_steps_respects_node_label_constraints() {
+        let graph = demo_graph();
+        let pattern = Pattern::with_constraints(
+            vec![PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: None,
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            }],
+            std::collections::BTreeMap::from([(
+                "b".to_owned(),
+                lynxes_core::PatternNodeConstraint {
+                    label: Some("Company".to_owned()),
+                },
+            )]),
+            vec![lynxes_core::PatternStepConstraint::default()],
+        )
+        .unwrap();
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
+
+        assert!(bindings.is_empty());
+    }
+
+    #[test]
+    fn execute_pattern_steps_emit_nulls_for_optional_unmatched_hops() {
+        let graph = demo_graph();
+        let pattern = Pattern::with_constraints(
+            vec![PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: Some("e".to_owned()),
+                edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            }],
+            std::collections::BTreeMap::new(),
+            vec![lynxes_core::PatternStepConstraint {
+                optional: true,
+                min_hops: 1,
+                max_hops: 1,
+            }],
+        )
+        .unwrap();
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 2).unwrap();
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
+
+        assert_eq!(bindings.len(), 1);
+        assert_alias_value(&bindings[0], "a", Some(2));
+        assert_alias_value(&bindings[0], "b", None);
+        assert_alias_value(&bindings[0], "e", None);
     }
 
     #[test]
@@ -3225,7 +3559,8 @@ mod tests {
 
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "a", 0).unwrap();
-        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+        let pattern = make_pattern(steps);
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
         let predicate = Expr::BinaryOp {
             left: Box::new(Expr::PatternCol {
                 alias: "b".to_owned(),
@@ -3240,8 +3575,8 @@ mod tests {
         let filtered = apply_pattern_where(&graph, &bindings, Some(&predicate)).unwrap();
 
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].get("a"), Some(&0));
-        assert_eq!(filtered[0].get("b"), Some(&1));
+        assert_alias_value(&filtered[0], "a", Some(0));
+        assert_alias_value(&filtered[0], "b", Some(1));
     }
 
     #[test]
@@ -3266,7 +3601,8 @@ mod tests {
 
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "a", 0).unwrap();
-        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+        let pattern = make_pattern(steps);
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
         let predicate = Expr::BinaryOp {
             left: Box::new(Expr::PatternCol {
                 alias: "e2".to_owned(),
@@ -3281,8 +3617,8 @@ mod tests {
         let filtered = apply_pattern_where(&graph, &bindings, Some(&predicate)).unwrap();
 
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].get("e2"), Some(&2));
-        assert_eq!(filtered[0].get("c"), Some(&3));
+        assert_alias_value(&filtered[0], "e2", Some(2));
+        assert_alias_value(&filtered[0], "c", Some(3));
     }
 
     #[test]
@@ -3298,7 +3634,8 @@ mod tests {
 
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "a", 0).unwrap();
-        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+        let pattern = make_pattern(steps);
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
 
         let filtered = apply_pattern_where(&graph, &bindings, None).unwrap();
 
@@ -3327,8 +3664,9 @@ mod tests {
 
         let mut seed = PatternBindingRow::new();
         bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let pattern = make_pattern(pattern);
         let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
-        let batch = materialize_pattern_bindings(&graph, &pattern, &bindings).unwrap();
+        let batch = materialize_pattern_bindings(&graph, &pattern.steps, &bindings).unwrap();
 
         let schema = batch.schema();
         let column_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
@@ -3417,7 +3755,8 @@ mod tests {
         ];
 
         let empty: PatternBindings = Vec::new();
-        let batch = materialize_pattern_bindings(&graph, &pattern, &empty).unwrap();
+        let pattern = make_pattern(pattern);
+        let batch = materialize_pattern_bindings(&graph, &pattern.steps, &empty).unwrap();
 
         assert_eq!(batch.num_rows(), 0);
         assert_eq!(batch.num_columns(), 19);
@@ -3437,7 +3776,8 @@ mod tests {
         }];
 
         let empty: PatternBindings = Vec::new();
-        let err = materialize_pattern_bindings(&graph, &pattern, &empty).unwrap_err();
+        let pattern = make_pattern(pattern);
+        let err = materialize_pattern_bindings(&graph, &pattern.steps, &empty).unwrap_err();
 
         assert!(
             matches!(err, GFError::InvalidConfig { message } if message.contains("used as both"))

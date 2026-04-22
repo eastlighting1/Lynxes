@@ -1,6 +1,7 @@
 #![allow(clippy::useless_conversion, clippy::wrong_self_convention)]
 
 use std::{
+    collections::{BTreeMap, HashMap},
     fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -25,14 +26,17 @@ use lynxes_core::{
     DisplayView, EdgeFrame, EdgeTypeSpec, Expr, GFError, GlimpseSummary, GraphFrame, GraphInfo,
     GraphPartitionMethod, GraphPartitioner, MutableGraphFrame, NodeFrame, PageRankConfig,
     PartitionedGraph, SampledSubgraph, SamplingConfig, SchemaSummary, ShortestPathConfig,
-    StructureStats, COL_EDGE_DST, COL_EDGE_SRC,
+    StructureStats, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE,
 };
 use lynxes_io::{
     parse_gf, read_gfb, read_parquet_graph, write_gf as core_write_gf, write_gfb,
     write_parquet_graph,
 };
 use lynxes_lazy::LazyGraphFrame;
-use lynxes_plan::{AggExpr, BinaryOp, Pattern, PatternStep, ScalarValue, StringOp, UnaryOp};
+use lynxes_plan::{
+    AggExpr, BinaryOp, Pattern, PatternNodeConstraint, PatternStep, PatternStepConstraint,
+    ScalarValue, StringOp, UnaryOp,
+};
 use pyo3::{
     basic::CompareOp,
     exceptions::{
@@ -42,8 +46,6 @@ use pyo3::{
     types::{PyAny, PyList, PyTuple, PyType},
     wrap_pyfunction,
 };
-use std::collections::BTreeMap;
-
 #[pyclass(name = "NodeFrame", module = "lynxes")]
 #[derive(Clone)]
 struct PyNodeFrame {
@@ -116,6 +118,7 @@ struct PyPatternNode {
 #[pyclass(name = "PatternEdge", module = "lynxes")]
 #[derive(Clone)]
 struct PyPatternEdge {
+    alias: Option<String>,
     edge_type: Option<String>,
     optional: bool,
     min_hops: u32,
@@ -986,9 +989,6 @@ impl PyLazyGraphFrame {
     ///     gf.node("b", "Person"),
     /// ])
     /// ```
-    ///
-    /// Note: the PatternMatch executor is not yet implemented; calling `.collect()` on
-    /// the result will raise `NotImplementedError`.
     #[pyo3(signature = (steps, where_=None))]
     fn match_pattern(
         &self,
@@ -1102,9 +1102,24 @@ impl PyMutableGraphFrame {
             .map_err(gf_error_to_py_err)
     }
 
-    fn add_edge(&mut self, src: &str, dst: &str) -> PyResult<()> {
+    #[pyo3(signature = (src, dst, *, edge_type=None, direction="out", attrs=None))]
+    fn add_edge(
+        &mut self,
+        src: &str,
+        dst: &str,
+        edge_type: Option<&str>,
+        direction: &str,
+        attrs: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
+        let direction = python_to_direction(direction)?;
+        let schema = {
+            let inner = self.inner_mut()?;
+            inner.edge_schema()
+        };
+        let edge = edge_row_from_schema(schema.as_ref(), src, dst, edge_type, direction, attrs)?;
+
         self.inner_mut()?
-            .add_edge(src, dst)
+            .add_edge_row(edge)
             .map_err(gf_error_to_py_err)
     }
 
@@ -1123,6 +1138,12 @@ impl PyMutableGraphFrame {
     fn update_node(&mut self, old_id: &str, node: PyRef<'_, PyNodeFrame>) -> PyResult<()> {
         self.inner_mut()?
             .update_node(old_id, (*node.inner).clone())
+            .map_err(gf_error_to_py_err)
+    }
+
+    fn update_edge(&mut self, edge_row: u32, src: &str, dst: &str) -> PyResult<()> {
+        self.inner_mut()?
+            .update_edge(edge_row, src, dst)
             .map_err(gf_error_to_py_err)
     }
 
@@ -1513,9 +1534,10 @@ fn node(alias: &str, label: Option<&str>, props: Option<Vec<String>>) -> PyPatte
 }
 
 #[pyfunction]
-#[pyo3(signature = (edge_type=None, optional=false, min_hops=1, max_hops=None))]
+#[pyo3(signature = (edge_type=None, *, alias=None, optional=false, min_hops=1, max_hops=None))]
 fn edge(
     edge_type: Option<&str>,
+    alias: Option<&str>,
     optional: bool,
     min_hops: u32,
     max_hops: Option<u32>,
@@ -1532,6 +1554,7 @@ fn edge(
     }
 
     Ok(PyPatternEdge {
+        alias: alias.map(str::to_owned),
         edge_type: edge_type.map(str::to_owned),
         optional,
         min_hops,
@@ -2760,6 +2783,102 @@ fn matches_scalar_null(value: &ScalarValue) -> bool {
     matches!(value, ScalarValue::Null)
 }
 
+fn edge_attrs_from_py_any(
+    attrs: Option<&Bound<'_, PyAny>>,
+) -> PyResult<HashMap<String, ScalarValue>> {
+    let Some(attrs) = attrs else {
+        return Ok(HashMap::new());
+    };
+    let dict = attrs.downcast::<pyo3::types::PyDict>().map_err(|_| {
+        PyTypeError::new_err("edge attrs must be a dict[str, scalar | list[scalar]]")
+    })?;
+
+    let mut values = HashMap::with_capacity(dict.len());
+    for (key, value) in dict.iter() {
+        let name = key
+            .extract::<String>()
+            .map_err(|_| PyTypeError::new_err("edge attrs keys must be strings"))?;
+        if name.starts_with('_') {
+            return Err(PyValueError::new_err(format!(
+                "edge attrs cannot override reserved column {name}; use dedicated parameters instead"
+            )));
+        }
+        values.insert(name, scalar_from_py_any(&value)?);
+    }
+
+    Ok(values)
+}
+
+fn edge_row_from_schema(
+    schema: &Schema,
+    src: &str,
+    dst: &str,
+    edge_type: Option<&str>,
+    direction: Direction,
+    attrs: Option<&Bound<'_, PyAny>>,
+) -> PyResult<EdgeFrame> {
+    let attrs = edge_attrs_from_py_any(attrs)?;
+
+    for name in attrs.keys() {
+        if schema.field_with_name(name).is_err() {
+            return Err(PyKeyError::new_err(format!(
+                "edge attrs contains unknown column {name}"
+            )));
+        }
+    }
+
+    let mut arrays = Vec::with_capacity(schema.fields().len());
+    for field in schema.fields() {
+        let value = match field.name().as_str() {
+            COL_EDGE_SRC => ScalarValue::String(src.to_owned()),
+            COL_EDGE_DST => ScalarValue::String(dst.to_owned()),
+            COL_EDGE_TYPE => ScalarValue::String(edge_type.unwrap_or("__delta__").to_owned()),
+            COL_EDGE_DIRECTION => ScalarValue::Int(direction.as_i8() as i64),
+            name => attrs.get(name).cloned().unwrap_or(ScalarValue::Null),
+        };
+
+        if matches!(value, ScalarValue::Null) && !field.is_nullable() {
+            return Err(PyValueError::new_err(format!(
+                "edge column {} is non-nullable; provide it explicitly when adding an edge",
+                field.name()
+            )));
+        }
+
+        arrays.push(build_array_from_scalar_values(&[value], field.data_type())?);
+    }
+
+    let batch = RecordBatch::try_new(Arc::new(schema.clone()), arrays)
+        .map_err(|err| PyValueError::new_err(err.to_string()))?;
+    EdgeFrame::from_record_batch(batch).map_err(gf_error_to_py_err)
+}
+
+fn register_pattern_node_constraint(
+    constraints: &mut BTreeMap<String, PatternNodeConstraint>,
+    node: &PyPatternNode,
+) -> PyResult<()> {
+    if !node.props.is_empty() {
+        return Err(PyNotImplementedError::new_err(format!(
+            "match_pattern: node alias '{}' uses props, but PatternNode.props is not implemented yet",
+            node.alias
+        )));
+    }
+
+    let constraint = PatternNodeConstraint {
+        label: node.label.clone(),
+    };
+    match constraints.get(&node.alias) {
+        Some(existing) if existing == &constraint => Ok(()),
+        Some(existing) => Err(PyValueError::new_err(format!(
+            "match_pattern: alias '{}' has conflicting node constraints: {:?} vs {:?}",
+            node.alias, existing, constraint
+        ))),
+        None => {
+            constraints.insert(node.alias.clone(), constraint);
+            Ok(())
+        }
+    }
+}
+
 /// Convert a Python list of alternating `PatternNode`/`PatternEdge`/`PatternNode` …
 /// into a `Pattern` for `LazyGraphFrame::match_pattern`.
 ///
@@ -2778,6 +2897,8 @@ fn pattern_from_py_steps(steps: &Bound<'_, PyAny>) -> PyResult<Pattern> {
     }
 
     let mut pattern_steps: Vec<PatternStep> = Vec::with_capacity(len / 2);
+    let mut node_constraints = BTreeMap::new();
+    let mut step_constraints = Vec::with_capacity(len / 2);
     let mut i = 0usize;
     while i + 2 <= len - 1 {
         let from_node = list
@@ -2812,23 +2933,40 @@ fn pattern_from_py_steps(steps: &Bound<'_, PyAny>) -> PyResult<Pattern> {
                 ))
             })?;
 
+        register_pattern_node_constraint(&mut node_constraints, &from_node)?;
+        register_pattern_node_constraint(&mut node_constraints, &to_node)?;
+
         let edge_type = match &pat_edge.edge_type {
             Some(t) => EdgeTypeSpec::Single(t.clone()),
             None => EdgeTypeSpec::Any,
         };
+        let max_hops = pat_edge.max_hops.unwrap_or(pat_edge.min_hops);
+
+        if pat_edge.alias.is_some() && max_hops > 1 {
+            return Err(PyNotImplementedError::new_err(format!(
+                "match_pattern: edge alias on step {} is only supported for single-hop edges",
+                i / 2
+            )));
+        }
 
         pattern_steps.push(PatternStep {
             from_alias: from_node.alias.clone(),
-            edge_alias: None,
+            edge_alias: pat_edge.alias.clone(),
             edge_type,
             direction: Direction::Out,
             to_alias: to_node.alias.clone(),
+        });
+        step_constraints.push(PatternStepConstraint {
+            optional: pat_edge.optional,
+            min_hops: pat_edge.min_hops,
+            max_hops,
         });
 
         i += 2;
     }
 
-    Ok(Pattern::new(pattern_steps))
+    Pattern::with_constraints(pattern_steps, node_constraints, step_constraints)
+        .map_err(gf_error_to_py_err)
 }
 
 fn write_gf_impl(graph: &GraphFrame, path: &PathBuf) -> PyResult<()> {

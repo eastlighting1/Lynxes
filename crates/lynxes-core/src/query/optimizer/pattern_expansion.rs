@@ -1,4 +1,4 @@
-use crate::{Expr, LogicalPlan, OptimizerPass, PatternStep};
+use crate::{Expr, LogicalPlan, OptimizerPass};
 
 /// Pattern-aware predicate pushdown for `LogicalPlan::PatternMatch`.
 ///
@@ -68,7 +68,7 @@ fn optimize_plan(plan: LogicalPlan) -> LogicalPlan {
             input,
             pattern,
             where_,
-        } => rewrite_pattern_match(optimize_plan(*input), pattern.steps, where_),
+        } => rewrite_pattern_match(optimize_plan(*input), pattern, where_),
         LogicalPlan::AggregateNeighbors {
             input,
             edge_type,
@@ -96,20 +96,20 @@ fn optimize_plan(plan: LogicalPlan) -> LogicalPlan {
 
 fn rewrite_pattern_match(
     mut input: LogicalPlan,
-    pattern: Vec<PatternStep>,
+    pattern: crate::Pattern,
     where_: Option<Expr>,
 ) -> LogicalPlan {
     let Some(where_) = where_ else {
         return LogicalPlan::PatternMatch {
             input: Box::new(input),
-            pattern: crate::Pattern::new(pattern),
+            pattern,
             where_: None,
         };
     };
-    let Some(root_alias) = pattern.first().map(|step| step.from_alias.as_str()) else {
+    let Some(root_alias) = pattern.steps.first().map(|step| step.from_alias.as_str()) else {
         return LogicalPlan::PatternMatch {
             input: Box::new(input),
-            pattern: crate::Pattern::new(pattern),
+            pattern,
             where_: Some(where_),
         };
     };
@@ -133,7 +133,7 @@ fn rewrite_pattern_match(
 
     LogicalPlan::PatternMatch {
         input: Box::new(input),
-        pattern: crate::Pattern::new(pattern),
+        pattern,
         where_: combine_conjuncts(remaining),
     }
 }

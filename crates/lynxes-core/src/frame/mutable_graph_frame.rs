@@ -29,15 +29,51 @@ mod imp {
     #[cfg(not(test))]
     const FLUSH_THRESHOLD: usize = 1024;
 
+    #[derive(Debug, Clone)]
+    struct PendingEdgeRow {
+        src_idx: u32,
+        dst_idx: u32,
+        edge: EdgeFrame,
+    }
+
+    #[derive(Clone)]
+    pub(crate) struct FrozenEdgeChunk {
+        csr: Arc<CsrIndex>,
+        edges: EdgeFrame,
+    }
+
+    impl FrozenEdgeChunk {
+        fn node_count(&self) -> usize {
+            self.csr.node_count()
+        }
+
+        fn edge_count(&self) -> usize {
+            self.csr.edge_count()
+        }
+
+        fn neighbors(&self, node_idx: u32) -> &[u32] {
+            self.csr.neighbors(node_idx)
+        }
+    }
+
+    impl std::fmt::Debug for FrozenEdgeChunk {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("FrozenEdgeChunk")
+                .field("node_count", &self.node_count())
+                .field("edge_count", &self.edge_count())
+                .finish()
+        }
+    }
+
     /// Append-only edge deltas that have not yet been merged into the base CSR.
     ///
-    /// `pending` stores raw `(src_idx, dst_idx)` pairs for the cheapest
-    /// possible edge append path. `frozen` stores compacted mini-CSR chunks
-    /// that are ready to participate in read paths before a full `compact()`
-    /// rebuild happens.
+    /// `pending` stores one-row `EdgeFrame` payloads together with the mutable
+    /// graph's edge-local source/destination indices. `frozen` stores compacted
+    /// mini-CSR chunks plus the corresponding edge payload rows so read paths
+    /// can observe fresh mutations before a full `compact()` rebuild happens.
     pub struct DeltaEdges {
-        pub(crate) pending: Mutex<Vec<(u32, u32)>>,
-        pub(crate) frozen: RwLock<Vec<Arc<CsrIndex>>>,
+        pending: Mutex<Vec<PendingEdgeRow>>,
+        pub(crate) frozen: RwLock<Vec<Arc<FrozenEdgeChunk>>>,
     }
 
     impl DeltaEdges {
@@ -198,38 +234,60 @@ mod imp {
             self.add_nodes_batch(node)
         }
 
-        /// Updates one stable edge row by tombstoning it and appending a new
-        /// topology entry into the mutable delta buffer.
+        /// Updates one stable edge row by tombstoning it and appending a
+        /// replacement edge row into the mutable delta buffer.
         ///
-        /// The mutable edge delta currently tracks topology only, so this API
-        /// rewrites `_src` / `_dst` and leaves edge payload re-materialization
-        /// to later phases.
+        /// This preserves the original edge payload and only rewrites `_src` /
+        /// `_dst` for the replacement row.
         pub fn update_edge(&mut self, edge_row: u32, src: &str, dst: &str) -> Result<()> {
-            if !self.node_id_to_idx.contains_key(src) {
-                return Err(GFError::NodeNotFound { id: src.to_owned() });
+            let replacement = self.replacement_edge_row(edge_row, src, dst)?;
+            self.update_edge_row(edge_row, replacement)
+        }
+
+        /// Updates one stable edge row by tombstoning it and appending the
+        /// provided replacement edge row into the mutable delta buffer.
+        pub fn update_edge_row(&mut self, edge_row: u32, edge: EdgeFrame) -> Result<()> {
+            self.validate_base_edge_row(edge_row)?;
+            self.delete_edge(edge_row)?;
+            self.add_edge_row(edge)
+        }
+
+        /// Appends one pending edge row into the mutable delta buffer.
+        ///
+        /// The provided `EdgeFrame` must contain exactly one row and match the
+        /// stable edge schema.
+        pub fn add_edge_row(&mut self, edge: EdgeFrame) -> Result<()> {
+            if edge.len() != 1 {
+                return Err(GFError::InvalidConfig {
+                    message: "add_edge_row requires exactly one edge row".to_owned(),
+                });
             }
-            if !self.node_id_to_idx.contains_key(dst) {
-                return Err(GFError::NodeNotFound { id: dst.to_owned() });
-            }
-            if edge_row as usize >= self.edge_tombstones.len() {
-                return Err(GFError::EdgeNotFound {
-                    id: edge_row.to_string(),
+            if edge.schema() != self.edge_data.load().schema() {
+                return Err(GFError::SchemaMismatch {
+                    message: "add_edge_row requires the current edge schema".to_owned(),
                 });
             }
 
-            self.delete_edge(edge_row)?;
-            self.add_edge(src, dst)
-        }
+            let batch = edge.to_record_batch();
+            let src = batch
+                .column_by_name(COL_EDGE_SRC)
+                .expect("validated edge batch must have _src")
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("_src must be Utf8")
+                .value(0)
+                .to_owned();
+            let dst = batch
+                .column_by_name(COL_EDGE_DST)
+                .expect("validated edge batch must have _dst")
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("_dst must be Utf8")
+                .value(0)
+                .to_owned();
 
-        /// Appends one pending edge in the mutable delta buffer.
-        ///
-        /// Node ids are resolved up front into the mutable graph's edge-local
-        /// compact index space. If a node exists in the `NodeFrame` but has not
-        /// yet appeared in any edge, this method assigns it a fresh edge-local
-        /// index so later delta reads and flushes can address it consistently.
-        pub fn add_edge(&mut self, src: &str, dst: &str) -> Result<()> {
-            let src_idx = self.resolve_edge_node_idx(src)?;
-            let dst_idx = self.resolve_edge_node_idx(dst)?;
+            let src_idx = self.resolve_edge_node_idx(&src)?;
+            let dst_idx = self.resolve_edge_node_idx(&dst)?;
 
             let mut pending = self
                 .delta
@@ -238,13 +296,28 @@ mod imp {
                 .map_err(|_| GFError::InvalidConfig {
                     message: "mutable edge delta pending buffer is poisoned".to_owned(),
                 })?;
-            pending.push((src_idx, dst_idx));
+            pending.push(PendingEdgeRow {
+                src_idx,
+                dst_idx,
+                edge,
+            });
 
             if pending.len() > FLUSH_THRESHOLD {
                 self.flush_pending_locked(&mut pending)?;
             }
 
             Ok(())
+        }
+
+        /// Appends one pending edge in the mutable delta buffer.
+        ///
+        /// This convenience wrapper synthesizes a minimal edge row with
+        /// `_type=\"__delta__\"`, `_direction=Out`, and null user columns.
+        /// If the edge schema has non-null user columns, callers must use
+        /// [`Self::add_edge_row`] instead and provide an explicit payload.
+        pub fn add_edge(&mut self, src: &str, dst: &str) -> Result<()> {
+            let edge = self.default_edge_row(src, dst)?;
+            self.add_edge_row(edge)
         }
 
         /// Returns outgoing neighbors from the mutable graph's current edge view.
@@ -299,11 +372,11 @@ mod imp {
                             self.edge_node_is_live(node_idx) && self.edge_node_is_live(dst_idx)
                         })
                 }))
-                .chain(pending.iter().filter_map(|&(src_idx, dst_idx)| {
-                    (src_idx == node_idx
-                        && self.edge_node_is_live(src_idx)
-                        && self.edge_node_is_live(dst_idx))
-                    .then_some(dst_idx)
+                .chain(pending.iter().filter_map(|edge| {
+                    (edge.src_idx == node_idx
+                        && self.edge_node_is_live(edge.src_idx)
+                        && self.edge_node_is_live(edge.dst_idx))
+                    .then_some(edge.dst_idx)
                 }))
                 .collect::<Vec<_>>();
 
@@ -339,7 +412,7 @@ mod imp {
                         .map_err(|_| GFError::InvalidConfig {
                             message: "mutable edge delta pending buffer is poisoned".to_owned(),
                         })?;
-                pending.retain(|&(src_idx, dst_idx)| src_idx != edge_idx && dst_idx != edge_idx);
+                pending.retain(|edge| edge.src_idx != edge_idx && edge.dst_idx != edge_idx);
             }
 
             Ok(())
@@ -454,12 +527,17 @@ mod imp {
             Ok(())
         }
 
+        /// Returns the current edge schema used for payload-preserving edge
+        /// mutations.
+        pub fn edge_schema(&self) -> Arc<arrow_schema::Schema> {
+            Arc::new(self.edge_data.load().schema().clone())
+        }
+
         /// Finalizes mutable state into a fresh immutable `GraphFrame`.
         ///
         /// The mutable wrapper is consumed. Live nodes are physically filtered,
         /// surviving stable edge rows keep their original payload columns, and
-        /// topology-only delta edges are materialized with default `_type` /
-        /// `_direction` values plus null-filled user columns.
+        /// delta edge rows keep the payload they were appended with.
         pub fn freeze(self) -> Result<GraphFrame> {
             {
                 let mut pending =
@@ -569,6 +647,16 @@ mod imp {
                 .unwrap_or(false)
         }
 
+        fn validate_base_edge_row(&self, edge_row: u32) -> Result<()> {
+            if edge_row as usize >= self.edge_tombstones.len() || !self.base_edge_is_live(edge_row)
+            {
+                return Err(GFError::EdgeNotFound {
+                    id: edge_row.to_string(),
+                });
+            }
+            Ok(())
+        }
+
         fn live_base_edge_frame(&self) -> Result<EdgeFrame> {
             let edge_data = self.edge_data.load_full();
             let mask = BooleanArray::from(
@@ -603,51 +691,27 @@ mod imp {
             self.node_is_live_by_id(src) && self.node_is_live_by_id(dst)
         }
 
-        fn materialize_delta_edge_frame(
-            &self,
-            frozen_chunks: &[Arc<CsrIndex>],
-        ) -> Result<EdgeFrame> {
+        fn default_edge_row(&self, src: &str, dst: &str) -> Result<EdgeFrame> {
             let edge_data = self.edge_data.load_full();
             let schema = edge_data.schema().clone();
-
-            let mut src_ids = Vec::new();
-            let mut dst_ids = Vec::new();
-            for chunk in frozen_chunks {
-                for src_idx in 0..chunk.node_count() as u32 {
-                    if !self.edge_node_is_live(src_idx) {
-                        continue;
-                    }
-                    let Some(src_id) = self.edge_node_idx_to_id.get(src_idx as usize) else {
-                        continue;
-                    };
-                    for &dst_idx in chunk.neighbors(src_idx) {
-                        if !self.edge_node_is_live(dst_idx) {
-                            continue;
-                        }
-                        let Some(dst_id) = self.edge_node_idx_to_id.get(dst_idx as usize) else {
-                            continue;
-                        };
-                        src_ids.push(src_id.clone());
-                        dst_ids.push(dst_id.clone());
-                    }
-                }
-            }
-
-            if src_ids.is_empty() {
-                return Ok(EdgeFrame::empty(&schema));
-            }
-
             let mut columns: Vec<ArrayRef> = Vec::with_capacity(schema.fields().len());
+
             for field in schema.fields() {
                 let name = field.name().as_str();
                 let array: ArrayRef = match name {
-                    COL_EDGE_SRC => Arc::new(StringArray::from(src_ids.clone())),
-                    COL_EDGE_DST => Arc::new(StringArray::from(dst_ids.clone())),
-                    COL_EDGE_TYPE => Arc::new(StringArray::from(vec!["__delta__"; src_ids.len()])),
-                    COL_EDGE_DIRECTION => {
-                        Arc::new(Int8Array::from(vec![Direction::Out.as_i8(); src_ids.len()]))
+                    COL_EDGE_SRC => Arc::new(StringArray::from(vec![src.to_owned()])),
+                    COL_EDGE_DST => Arc::new(StringArray::from(vec![dst.to_owned()])),
+                    COL_EDGE_TYPE => Arc::new(StringArray::from(vec!["__delta__"])),
+                    COL_EDGE_DIRECTION => Arc::new(Int8Array::from(vec![Direction::Out.as_i8()])),
+                    _ if field.is_nullable() => new_null_array(field.data_type(), 1),
+                    _ => {
+                        return Err(GFError::InvalidConfig {
+                            message: format!(
+                                "add_edge requires explicit values for non-null edge column '{}'; use add_edge_row instead",
+                                field.name()
+                            ),
+                        });
                     }
-                    _ => new_null_array(field.data_type(), src_ids.len()),
                 };
                 columns.push(array);
             }
@@ -655,6 +719,90 @@ mod imp {
             let batch =
                 RecordBatch::try_new(Arc::new(schema), columns).map_err(std::io::Error::other)?;
             EdgeFrame::from_record_batch(batch)
+        }
+
+        fn edge_row_with_endpoints(
+            &self,
+            edge: &EdgeFrame,
+            src: &str,
+            dst: &str,
+        ) -> Result<EdgeFrame> {
+            let batch = edge.to_record_batch();
+            let mut columns: Vec<ArrayRef> = Vec::with_capacity(batch.num_columns());
+
+            for (field, column) in batch.schema().fields().iter().zip(batch.columns()) {
+                let array: ArrayRef = match field.name().as_str() {
+                    COL_EDGE_SRC => Arc::new(StringArray::from(vec![src.to_owned()])),
+                    COL_EDGE_DST => Arc::new(StringArray::from(vec![dst.to_owned()])),
+                    _ => Arc::clone(column),
+                };
+                columns.push(array);
+            }
+
+            let batch =
+                RecordBatch::try_new(batch.schema(), columns).map_err(std::io::Error::other)?;
+            EdgeFrame::from_record_batch(batch)
+        }
+
+        fn replacement_edge_row(&self, edge_row: u32, src: &str, dst: &str) -> Result<EdgeFrame> {
+            if !self.node_id_to_idx.contains_key(src) {
+                return Err(GFError::NodeNotFound { id: src.to_owned() });
+            }
+            if !self.node_id_to_idx.contains_key(dst) {
+                return Err(GFError::NodeNotFound { id: dst.to_owned() });
+            }
+            self.validate_base_edge_row(edge_row)?;
+
+            let edge_data = self.edge_data.load_full();
+            let mask = BooleanArray::from(
+                (0..edge_data.len())
+                    .map(|row| row == edge_row as usize)
+                    .collect::<Vec<_>>(),
+            );
+            let edge = edge_data.filter(&mask)?;
+            self.edge_row_with_endpoints(&edge, src, dst)
+        }
+
+        fn materialize_delta_edge_frame(
+            &self,
+            frozen_chunks: &[Arc<FrozenEdgeChunk>],
+        ) -> Result<EdgeFrame> {
+            let edge_data = self.edge_data.load_full();
+            let mut live_chunks = Vec::new();
+            for chunk in frozen_chunks {
+                let batch = chunk.edges.to_record_batch();
+                let src_col = batch
+                    .column_by_name(COL_EDGE_SRC)
+                    .expect("validated edge batch must have _src")
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .expect("_src must be Utf8");
+                let dst_col = batch
+                    .column_by_name(COL_EDGE_DST)
+                    .expect("validated edge batch must have _dst")
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .expect("_dst must be Utf8");
+                let mask = BooleanArray::from(
+                    (0..chunk.edges.len())
+                        .map(|row| {
+                            self.node_is_live_by_id(src_col.value(row))
+                                && self.node_is_live_by_id(dst_col.value(row))
+                        })
+                        .collect::<Vec<_>>(),
+                );
+                let live = chunk.edges.filter(&mask)?;
+                if !live.is_empty() {
+                    live_chunks.push(live);
+                }
+            }
+
+            if live_chunks.is_empty() {
+                return Ok(EdgeFrame::empty(edge_data.schema()));
+            }
+
+            let refs: Vec<&EdgeFrame> = live_chunks.iter().collect();
+            EdgeFrame::concat(&refs)
         }
 
         fn node_is_live_by_id(&self, id: &str) -> bool {
@@ -682,14 +830,17 @@ mod imp {
             Ok(idx)
         }
 
-        fn flush_pending_locked(&self, pending: &mut Vec<(u32, u32)>) -> Result<()> {
+        fn flush_pending_locked(&self, pending: &mut Vec<PendingEdgeRow>) -> Result<()> {
             if pending.is_empty() {
                 return Ok(());
             }
 
             let node_count = self.edge_node_idx_to_id.len();
-            let (src_rows, dst_rows): (Vec<u32>, Vec<u32>) = pending.iter().copied().unzip();
+            let src_rows = pending.iter().map(|edge| edge.src_idx).collect::<Vec<_>>();
+            let dst_rows = pending.iter().map(|edge| edge.dst_idx).collect::<Vec<_>>();
             let mini_csr = Arc::new(CsrIndex::build(&src_rows, &dst_rows, node_count));
+            let frames = pending.iter().map(|edge| &edge.edge).collect::<Vec<_>>();
+            let edges = EdgeFrame::concat(&frames)?;
 
             self.delta
                 .frozen
@@ -697,7 +848,10 @@ mod imp {
                 .map_err(|_| GFError::InvalidConfig {
                     message: "mutable edge delta frozen chunks are poisoned".to_owned(),
                 })?
-                .push(mini_csr);
+                .push(Arc::new(FrozenEdgeChunk {
+                    csr: mini_csr,
+                    edges,
+                }));
 
             pending.clear();
             Ok(())
@@ -728,13 +882,13 @@ mod imp {
         use std::thread;
 
         use arrow_array::builder::{ListBuilder, StringBuilder};
-        use arrow_array::{ArrayRef, Int8Array, ListArray, RecordBatch, StringArray};
+        use arrow_array::{ArrayRef, Int64Array, Int8Array, ListArray, RecordBatch, StringArray};
         use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 
         use super::MutableGraphFrame;
         use crate::{
-            EdgeFrame, GFError, GraphFrame, NodeFrame, COL_EDGE_DIRECTION, COL_EDGE_DST,
-            COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
+            Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, COL_EDGE_DIRECTION,
+            COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
         };
 
         fn labels_array(values: &[&[&str]]) -> ListArray {
@@ -794,6 +948,53 @@ mod imp {
             GraphFrame::new(nodes, edges).unwrap()
         }
 
+        fn weighted_graph() -> GraphFrame {
+            let node_schema = Arc::new(ArrowSchema::new(vec![
+                Field::new(COL_NODE_ID, DataType::Utf8, false),
+                Field::new(
+                    COL_NODE_LABEL,
+                    DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
+                    false,
+                ),
+            ]));
+            let nodes = NodeFrame::from_record_batch(
+                RecordBatch::try_new(
+                    node_schema,
+                    vec![
+                        Arc::new(StringArray::from(vec!["alice", "bob", "charlie"])) as ArrayRef,
+                        Arc::new(labels_array(&[&["Person"], &["Person"], &["Person"]]))
+                            as ArrayRef,
+                    ],
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+            let edge_schema = Arc::new(ArrowSchema::new(vec![
+                Field::new(COL_EDGE_SRC, DataType::Utf8, false),
+                Field::new(COL_EDGE_DST, DataType::Utf8, false),
+                Field::new(COL_EDGE_TYPE, DataType::Utf8, false),
+                Field::new(COL_EDGE_DIRECTION, DataType::Int8, false),
+                Field::new("weight", DataType::Int64, true),
+            ]));
+            let edges = EdgeFrame::from_record_batch(
+                RecordBatch::try_new(
+                    edge_schema,
+                    vec![
+                        Arc::new(StringArray::from(vec!["alice", "bob"])) as ArrayRef,
+                        Arc::new(StringArray::from(vec!["bob", "charlie"])) as ArrayRef,
+                        Arc::new(StringArray::from(vec!["KNOWS", "KNOWS"])) as ArrayRef,
+                        Arc::new(Int8Array::from(vec![0i8, 0])) as ArrayRef,
+                        Arc::new(Int64Array::from(vec![Some(1), Some(2)])) as ArrayRef,
+                    ],
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+            GraphFrame::new(nodes, edges).unwrap()
+        }
+
         #[test]
         fn from_graph_frame_shares_edge_csr_with_base_csr() {
             let mutable = MutableGraphFrame::from_graph_frame(sample_graph());
@@ -814,8 +1015,7 @@ mod imp {
 
             mutable.add_edge("alice", "charlie").unwrap();
 
-            let pending = mutable.delta.pending.lock().unwrap();
-            assert_eq!(pending.as_slice(), &[(0, 2)]);
+            assert_eq!(pending_pairs(&mutable), vec![(0, 2)]);
         }
 
         #[test]
@@ -872,9 +1072,7 @@ mod imp {
 
             mutable.add_edge("solo", "alice").unwrap();
 
-            let pending = mutable.delta.pending.lock().unwrap();
-            assert_eq!(pending.as_slice(), &[(2, 0)]);
-            drop(pending);
+            assert_eq!(pending_pairs(&mutable), vec![(2, 0)]);
             assert_eq!(mutable.edge_node_id_to_idx.get("solo"), Some(&2));
             assert_eq!(mutable.edge_node_idx_to_id[2], "solo");
         }
@@ -886,9 +1084,7 @@ mod imp {
             mutable.add_edge("alice", "charlie").unwrap();
             mutable.add_edge("bob", "alice").unwrap();
 
-            let pending = mutable.delta.pending.lock().unwrap();
-            assert_eq!(pending.as_slice(), &[(0, 2), (1, 0)]);
-            drop(pending);
+            assert_eq!(pending_pairs(&mutable), vec![(0, 2), (1, 0)]);
             let frozen = mutable.delta.frozen.read().unwrap();
             assert!(frozen.is_empty());
         }
@@ -1087,6 +1283,30 @@ mod imp {
             (src, dst)
         }
 
+        fn pending_pairs(mutable: &MutableGraphFrame) -> Vec<(u32, u32)> {
+            mutable
+                .delta
+                .pending
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|edge| (edge.src_idx, edge.dst_idx))
+                .collect()
+        }
+
+        fn pending_edge_type(mutable: &MutableGraphFrame, index: usize) -> String {
+            let pending = mutable.delta.pending.lock().unwrap();
+            let batch = pending[index].edge.to_record_batch();
+            batch
+                .column_by_name(COL_EDGE_TYPE)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .value(0)
+                .to_owned()
+        }
+
         #[test]
         fn add_node_appends_single_row_and_updates_lookup() {
             let mut mutable = MutableGraphFrame::from_graph_frame(sample_graph());
@@ -1150,9 +1370,8 @@ mod imp {
             mutable.update_edge(0, "alice", "charlie").unwrap();
 
             assert!(!mutable.edge_tombstones[0]);
-            let pending = mutable.delta.pending.lock().unwrap();
-            assert_eq!(pending.as_slice(), &[(0, 2)]);
-            drop(pending);
+            assert_eq!(pending_pairs(&mutable), vec![(0, 2)]);
+            assert_eq!(pending_edge_type(&mutable, 0), "KNOWS");
 
             let alice_neighbors = mutable.out_neighbors(0).unwrap().collect::<Vec<_>>();
             assert_eq!(alice_neighbors, vec![2]);
@@ -1179,7 +1398,7 @@ mod imp {
             assert_eq!(original_base.edge_count(), 2);
             assert_eq!(mutable.base_csr.load().edge_count(), 2);
             assert_eq!(mutable.delta.frozen.read().unwrap().len(), 0);
-            assert_eq!(mutable.delta.pending.lock().unwrap().as_slice(), &[(0, 2)]);
+            assert_eq!(pending_pairs(&mutable), vec![(0, 2)]);
             assert_eq!(original_base.neighbors(0), &[1]);
             let mutable_neighbors = mutable.out_neighbors(0).unwrap().collect::<Vec<_>>();
             assert_eq!(mutable_neighbors, vec![1, 2]);
@@ -1253,6 +1472,62 @@ mod imp {
             assert!(frozen.nodes().row_index("bob").is_none());
             assert_eq!(frozen.out_neighbors("charlie").unwrap(), vec!["alice"]);
             assert!(frozen.out_neighbors("alice").unwrap().is_empty());
+        }
+
+        #[test]
+        fn add_edge_row_preserves_payload_through_freeze() {
+            let mut mutable = MutableGraphFrame::from_graph_frame(weighted_graph());
+            let edge_schema = mutable.edge_schema();
+            let edge = EdgeFrame::from_record_batch(
+                RecordBatch::try_new(
+                    edge_schema,
+                    vec![
+                        Arc::new(StringArray::from(vec!["charlie"])) as ArrayRef,
+                        Arc::new(StringArray::from(vec!["alice"])) as ArrayRef,
+                        Arc::new(StringArray::from(vec!["LIKES"])) as ArrayRef,
+                        Arc::new(Int8Array::from(vec![Direction::Out.as_i8()])) as ArrayRef,
+                        Arc::new(Int64Array::from(vec![Some(7)])) as ArrayRef,
+                    ],
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+            mutable.add_edge_row(edge).unwrap();
+            let frozen = mutable.freeze().unwrap();
+            let batch = frozen.edges().to_record_batch();
+            let src = batch
+                .column_by_name(COL_EDGE_SRC)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let dst = batch
+                .column_by_name(COL_EDGE_DST)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let edge_type = batch
+                .column_by_name(COL_EDGE_TYPE)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let weight = batch
+                .column_by_name("weight")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+
+            let preserved = (0..batch.num_rows()).any(|row| {
+                src.value(row) == "charlie"
+                    && dst.value(row) == "alice"
+                    && edge_type.value(row) == "LIKES"
+                    && weight.value(row) == 7
+            });
+            assert!(preserved);
         }
     }
 }

@@ -1,5 +1,7 @@
 import pytest
 
+import lynxes as gf
+
 
 def test_mutable_graph_frame_crud_smoke(graph):
     """CRUD Python surface smoke test for MutableGraphFrame."""
@@ -54,3 +56,65 @@ def test_mutable_graph_frame_crud_smoke(graph):
     # Verify mgf is consumed/frozen
     with pytest.raises(RuntimeError, match="has already been frozen"):
         mgf.add_edge("alice", "bob")
+
+
+def test_mutable_add_edge_preserves_explicit_edge_payload():
+    graph = gf.graph(
+        nodes={
+            "_id": ["alice", "bob"],
+            "_label": [["Person"], ["Person"]],
+        },
+        edges={
+            "_src": ["alice"],
+            "_dst": ["bob"],
+            "_type": ["KNOWS"],
+            "_direction": [0],
+            "weight": [1],
+        },
+    )
+
+    mutable = graph.into_mutable()
+    mutable.add_edge("bob", "alice", edge_type="LIKES", attrs={"weight": 7})
+    frozen = mutable.freeze()
+    batch = frozen.edges().to_pyarrow()
+    rows = list(
+        zip(
+            batch["_src"].to_pylist(),
+            batch["_dst"].to_pylist(),
+            batch["_type"].to_pylist(),
+            batch["weight"].to_pylist(),
+        )
+    )
+
+    assert ("bob", "alice", "LIKES", 7) in rows
+
+
+def test_mutable_update_edge_preserves_existing_edge_payload():
+    graph = gf.graph(
+        nodes={
+            "_id": ["alice", "bob"],
+            "_label": [["Person"], ["Person"]],
+        },
+        edges={
+            "_src": ["alice"],
+            "_dst": ["bob"],
+            "_type": ["KNOWS"],
+            "_direction": [0],
+            "weight": [1],
+        },
+    )
+
+    mutable = graph.into_mutable()
+    mutable.update_edge(0, "bob", "alice")
+    frozen = mutable.freeze()
+    batch = frozen.edges().to_pyarrow()
+    rows = list(
+        zip(
+            batch["_src"].to_pylist(),
+            batch["_dst"].to_pylist(),
+            batch["_type"].to_pylist(),
+            batch["weight"].to_pylist(),
+        )
+    )
+
+    assert ("bob", "alice", "KNOWS", 1) in rows

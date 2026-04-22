@@ -147,9 +147,35 @@ class TestMatchPattern:
         assert "a._id" in result.schema.names
         assert "b._id" in result.schema.names
 
+    def test_match_pattern_edge_alias_materializes_edge_columns(self, graph):
+        result = (
+            graph.lazy()
+            .match_pattern(
+                [
+                    gf.node("a", "Person"),
+                    gf.edge("KNOWS", alias="e"),
+                    gf.node("b", "Person"),
+                ]
+            )
+            .collect()
+        )
+
+        assert "e._type" in result.schema.names
+        assert set(result.column("e._type").to_pylist()) == {"KNOWS"}
+
     def test_match_pattern_invalid_steps_raises(self, graph):
         with pytest.raises((TypeError, ValueError)):
             graph.lazy().match_pattern([gf.node("a"), gf.node("b")])
+
+    def test_match_pattern_rejects_unimplemented_node_props(self, graph):
+        with pytest.raises(NotImplementedError):
+            graph.lazy().match_pattern(
+                [
+                    gf.node("a", props=["age"]),
+                    gf.edge("KNOWS"),
+                    gf.node("b"),
+                ]
+            )
 
     def test_match_pattern_with_where_clause(self, graph):
         lazy = graph.lazy().match_pattern(
@@ -178,3 +204,53 @@ class TestMatchPattern:
 
         a_ids = result.column("a._id").to_pylist()
         assert a_ids == ["alice", "alice"]
+
+    def test_match_pattern_respects_to_node_label_constraints(self, graph):
+        result = (
+            graph.lazy()
+            .match_pattern(
+                [
+                    gf.node("a", "Person"),
+                    gf.edge("KNOWS"),
+                    gf.node("b", "Company"),
+                ]
+            )
+            .collect()
+        )
+
+        assert result.num_rows == 0
+
+    def test_match_pattern_supports_exact_multi_hop_steps(self, graph):
+        result = (
+            graph.lazy()
+            .filter_nodes(gf.col("_id") == "alice")
+            .match_pattern(
+                [
+                    gf.node("a", "Person"),
+                    gf.edge(min_hops=2),
+                    gf.node("c", "Company"),
+                ]
+            )
+            .collect()
+        )
+
+        assert result.column("a._id").to_pylist() == ["alice"]
+        assert result.column("c._id").to_pylist() == ["acme"]
+
+    def test_match_pattern_optional_step_materializes_null_aliases(self, graph):
+        result = (
+            graph.lazy()
+            .filter_nodes(gf.col("_id") == "acme")
+            .match_pattern(
+                [
+                    gf.node("a", "Company"),
+                    gf.edge("KNOWS", alias="e", optional=True),
+                    gf.node("b"),
+                ]
+            )
+            .collect()
+        )
+
+        assert result.column("a._id").to_pylist() == ["acme"]
+        assert result.column("b._id").to_pylist() == [None]
+        assert result.column("e._type").to_pylist() == [None]

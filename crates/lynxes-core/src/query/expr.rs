@@ -1,8 +1,10 @@
 use arrow_schema::DataType;
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
-use crate::Direction;
+use crate::{Direction, GFError};
 
 /// Symbolic expression tree used by lazy filters, sorting, traversal pruning,
 /// aggregation input selection, and pattern predicates.
@@ -130,6 +132,8 @@ pub enum EdgeTypeSpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pattern {
     pub steps: Vec<PatternStep>,
+    pub node_constraints: BTreeMap<String, PatternNodeConstraint>,
+    pub step_constraints: Vec<PatternStepConstraint>,
 }
 
 /// One traversal step inside a fixed pattern/traversal sequence.
@@ -142,13 +146,72 @@ pub struct PatternStep {
     pub to_alias: String,
 }
 
+/// Alias-level node restrictions captured during pattern lowering.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PatternNodeConstraint {
+    pub label: Option<String>,
+}
+
+/// Step-level traversal restrictions captured during pattern lowering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatternStepConstraint {
+    pub optional: bool,
+    pub min_hops: u32,
+    pub max_hops: u32,
+}
+
+impl Default for PatternStepConstraint {
+    fn default() -> Self {
+        Self {
+            optional: false,
+            min_hops: 1,
+            max_hops: 1,
+        }
+    }
+}
+
 impl Pattern {
     pub fn new(steps: Vec<PatternStep>) -> Self {
-        Self { steps }
+        let step_constraints = vec![PatternStepConstraint::default(); steps.len()];
+        Self {
+            steps,
+            node_constraints: BTreeMap::new(),
+            step_constraints,
+        }
+    }
+
+    pub fn with_constraints(
+        steps: Vec<PatternStep>,
+        node_constraints: BTreeMap<String, PatternNodeConstraint>,
+        step_constraints: Vec<PatternStepConstraint>,
+    ) -> crate::Result<Self> {
+        if step_constraints.len() != steps.len() {
+            return Err(GFError::InvalidConfig {
+                message: format!(
+                    "pattern step constraint count ({}) must match step count ({})",
+                    step_constraints.len(),
+                    steps.len()
+                ),
+            });
+        }
+
+        Ok(Self {
+            steps,
+            node_constraints,
+            step_constraints,
+        })
     }
 
     pub fn is_empty(&self) -> bool {
         self.steps.is_empty()
+    }
+
+    pub fn node_constraint(&self, alias: &str) -> Option<&PatternNodeConstraint> {
+        self.node_constraints.get(alias)
+    }
+
+    pub fn step_constraint(&self, index: usize) -> &PatternStepConstraint {
+        &self.step_constraints[index]
     }
 }
 

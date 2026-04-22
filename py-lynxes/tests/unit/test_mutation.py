@@ -14,7 +14,7 @@ def test_mutable_graph_frame_crud_smoke(graph):
     if len(mask) > 0:
         mask[0] = True
     alice_node = nodes.filter(mask)
-    
+
     # Filter to get exactly one row for 'bob'
     mask2 = [False] * len(nodes)
     if len(mask2) > 1:

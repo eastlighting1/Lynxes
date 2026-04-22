@@ -14,7 +14,7 @@ mod tests {
 
     #[test]
     fn reexports_pattern_expansion_from_plan_facade() {
-        let pass = PatternExpansion::default();
+        let pass = PatternExpansion;
         assert_eq!(OptimizerPass::name(&pass), "PatternExpansion");
     }
 

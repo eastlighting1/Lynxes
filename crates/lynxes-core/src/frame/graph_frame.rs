@@ -6,6 +6,17 @@ use hashbrown::{HashMap, HashSet};
 use super::mutable_graph_frame::MutableGraphFrame;
 use crate::{EdgeFrame, GFError, NodeFrame, Result, COL_EDGE_DST, COL_EDGE_SRC, COL_NODE_LABEL};
 
+#[cfg(not(target_arch = "wasm32"))]
+type MutableParts = (
+    NodeFrame,
+    EdgeFrame,
+    Option<crate::Schema>,
+    HashMap<String, u32>,
+    Vec<String>,
+    HashMap<String, u32>,
+    Vec<String>,
+);
+
 /// In-memory graph composed of a `NodeFrame` and an `EdgeFrame`.
 ///
 /// `GraphFrame` validates that every edge endpoint exists in `nodes` (unless
@@ -417,17 +428,7 @@ impl GraphFrame {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn into_mutable_parts(
-        self,
-    ) -> (
-        NodeFrame,
-        EdgeFrame,
-        Option<crate::Schema>,
-        HashMap<String, u32>,
-        Vec<String>,
-        HashMap<String, u32>,
-        Vec<String>,
-    ) {
+    pub(crate) fn into_mutable_parts(self) -> MutableParts {
         (
             self.nodes,
             self.edges,

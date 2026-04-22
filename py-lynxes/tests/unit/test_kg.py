@@ -26,7 +26,7 @@ def test_match_pattern(graph):
         # 'a._id', 'b._id', etc.
         assert result.num_columns > 0
         assert result.num_rows >= 0
-        
+
         # Check if basic expected aliases are in column names
         col_names = result.column_names if hasattr(result, "column_names") else result.schema.names
         assert any(name.startswith("a.") for name in col_names)
@@ -37,10 +37,7 @@ def test_match_pattern(graph):
         pass
     except Exception as e:
         # In case it raises UnsupportedOperation
-        if (
-            "not implemented" in str(e).lower()
-            or "unsupported" in str(e).lower()
-        ):
+        if "not implemented" in str(e).lower() or "unsupported" in str(e).lower():
             pytest.skip(f"match_pattern executor not yet implemented or unsupported: {e}")
         else:
             raise

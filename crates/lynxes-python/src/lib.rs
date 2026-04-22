@@ -1,4 +1,10 @@
-use std::{fs, path::PathBuf, sync::Arc};
+#![allow(clippy::useless_conversion, clippy::wrong_self_convention)]
+
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use arrow::{
     array::{
@@ -2829,7 +2835,7 @@ fn write_gf_impl(graph: &GraphFrame, path: &PathBuf) -> PyResult<()> {
     core_write_gf(graph, path).map_err(gf_error_to_py_err)
 }
 
-fn unsupported_write_impl(method: &str, path: &PathBuf) -> PyResult<()> {
+fn unsupported_write_impl(method: &str, path: &Path) -> PyResult<()> {
     Err(PyNotImplementedError::new_err(format!(
         "{method} is not implemented in graphframe-core yet (requested path: {})",
         path.display()

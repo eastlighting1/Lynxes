@@ -887,8 +887,8 @@ mod imp {
 
         use super::MutableGraphFrame;
         use crate::{
-            Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, COL_EDGE_DIRECTION,
-            COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
+            Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, COL_EDGE_DIRECTION, COL_EDGE_DST,
+            COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
         };
 
         fn labels_array(values: &[&[&str]]) -> ListArray {

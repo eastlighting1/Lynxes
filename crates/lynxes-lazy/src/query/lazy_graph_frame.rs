@@ -206,7 +206,9 @@ impl LazyGraphFrame {
             ExecutionValue::Nodes(nodes) => Ok(nodes),
             ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
                 Err(GFError::UnsupportedOperation {
-                    message: "collect_nodes() cannot materialize an edge-domain or pattern-row plan".to_owned(),
+                    message:
+                        "collect_nodes() cannot materialize an edge-domain or pattern-row plan"
+                            .to_owned(),
                 })
             }
         }
@@ -224,7 +226,8 @@ impl LazyGraphFrame {
             ExecutionValue::Edges(edges) => Ok(edges),
             ExecutionValue::Nodes(_) | ExecutionValue::PatternRows(_) => {
                 Err(GFError::UnsupportedOperation {
-                    message: "collect_edges() cannot materialize a node-domain or pattern-row plan".to_owned(),
+                    message: "collect_edges() cannot materialize a node-domain or pattern-row plan"
+                        .to_owned(),
                 })
             }
         }
@@ -236,7 +239,10 @@ impl LazyGraphFrame {
     }
 
     #[doc(hidden)]
-    pub fn collect_pattern_rows_with_options(self, options: OptimizerOptions) -> Result<RecordBatch> {
+    pub fn collect_pattern_rows_with_options(
+        self,
+        options: OptimizerOptions,
+    ) -> Result<RecordBatch> {
         let source_graph = self.require_source_graph("collect_pattern_rows")?;
         let plan = Optimizer::new(options).run(self.plan);
         match execute(&plan, source_graph)? {

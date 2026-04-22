@@ -57,7 +57,11 @@ mod imp {
 
     impl std::fmt::Debug for DeltaEdges {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            let pending_len = self.pending.lock().map(|pending| pending.len()).unwrap_or(0);
+            let pending_len = self
+                .pending
+                .lock()
+                .map(|pending| pending.len())
+                .unwrap_or(0);
             let frozen_len = self.frozen.read().map(|frozen| frozen.len()).unwrap_or(0);
 
             f.debug_struct("DeltaEdges")
@@ -279,30 +283,28 @@ mod imp {
                 .copied()
                 .zip(base_csr.edge_ids(node_idx).iter().copied())
                 .filter_map(|(dst_idx, edge_row)| {
-                    (!self.base_snapshot_has_stable_edge_rows.load(Ordering::Relaxed)
+                    (!self
+                        .base_snapshot_has_stable_edge_rows
+                        .load(Ordering::Relaxed)
                         || self.base_edge_is_live(edge_row))
-                        .then_some(dst_idx)
-                        .filter(|&dst_idx| self.edge_node_is_live(dst_idx))
+                    .then_some(dst_idx)
+                    .filter(|&dst_idx| self.edge_node_is_live(dst_idx))
                 })
-                .chain(
-                    frozen
+                .chain(frozen.iter().flat_map(|chunk| {
+                    chunk
+                        .neighbors(node_idx)
                         .iter()
-                        .flat_map(|chunk| {
-                            chunk.neighbors(node_idx).iter().copied().filter(|&dst_idx| {
-                                self.edge_node_is_live(node_idx) && self.edge_node_is_live(dst_idx)
-                            })
-                        }),
-                )
-                .chain(
-                    pending
-                        .iter()
-                        .filter_map(|&(src_idx, dst_idx)| {
-                            (src_idx == node_idx
-                                && self.edge_node_is_live(src_idx)
-                                && self.edge_node_is_live(dst_idx))
-                            .then_some(dst_idx)
-                        }),
-                )
+                        .copied()
+                        .filter(|&dst_idx| {
+                            self.edge_node_is_live(node_idx) && self.edge_node_is_live(dst_idx)
+                        })
+                }))
+                .chain(pending.iter().filter_map(|&(src_idx, dst_idx)| {
+                    (src_idx == node_idx
+                        && self.edge_node_is_live(src_idx)
+                        && self.edge_node_is_live(dst_idx))
+                    .then_some(dst_idx)
+                }))
                 .collect::<Vec<_>>();
 
             Ok(neighbors.into_iter())
@@ -330,13 +332,13 @@ mod imp {
                     self.edge_tombstones[edge_row as usize] = false;
                 }
 
-                let mut pending = self
-                    .delta
-                    .pending
-                    .lock()
-                    .map_err(|_| GFError::InvalidConfig {
-                        message: "mutable edge delta pending buffer is poisoned".to_owned(),
-                    })?;
+                let mut pending =
+                    self.delta
+                        .pending
+                        .lock()
+                        .map_err(|_| GFError::InvalidConfig {
+                            message: "mutable edge delta pending buffer is poisoned".to_owned(),
+                        })?;
                 pending.retain(|&(src_idx, dst_idx)| src_idx != edge_idx && dst_idx != edge_idx);
             }
 
@@ -367,13 +369,13 @@ mod imp {
         /// working during the swap; new readers observe the rebuilt snapshot.
         pub fn compact(&self) -> Result<()> {
             {
-                let mut pending = self
-                    .delta
-                    .pending
-                    .lock()
-                    .map_err(|_| GFError::InvalidConfig {
-                        message: "mutable edge delta pending buffer is poisoned".to_owned(),
-                    })?;
+                let mut pending =
+                    self.delta
+                        .pending
+                        .lock()
+                        .map_err(|_| GFError::InvalidConfig {
+                            message: "mutable edge delta pending buffer is poisoned".to_owned(),
+                        })?;
                 if !pending.is_empty() {
                     self.flush_pending_locked(&mut pending)?;
                 }
@@ -401,7 +403,10 @@ mod imp {
                         .filter_map(|(dst_idx, edge_row)| {
                             self.base_edge_is_live(edge_row)
                                 .then_some(dst_idx)
-                                .filter(|&dst_idx| self.edge_node_is_live(src_idx) && self.edge_node_is_live(dst_idx))
+                                .filter(|&dst_idx| {
+                                    self.edge_node_is_live(src_idx)
+                                        && self.edge_node_is_live(dst_idx)
+                                })
                                 .map(|dst_idx| (src_idx, dst_idx))
                         });
                     let frozen_iter = frozen_chunks.iter().flat_map(|chunk| {
@@ -409,7 +414,9 @@ mod imp {
                             .neighbors(src_idx)
                             .iter()
                             .copied()
-                            .filter(move |&dst_idx| self.edge_node_is_live(src_idx) && self.edge_node_is_live(dst_idx))
+                            .filter(move |&dst_idx| {
+                                self.edge_node_is_live(src_idx) && self.edge_node_is_live(dst_idx)
+                            })
                             .map(move |dst_idx| (src_idx, dst_idx))
                     });
 
@@ -455,13 +462,13 @@ mod imp {
         /// `_direction` values plus null-filled user columns.
         pub fn freeze(self) -> Result<GraphFrame> {
             {
-                let mut pending = self
-                    .delta
-                    .pending
-                    .lock()
-                    .map_err(|_| GFError::InvalidConfig {
-                        message: "mutable edge delta pending buffer is poisoned".to_owned(),
-                    })?;
+                let mut pending =
+                    self.delta
+                        .pending
+                        .lock()
+                        .map_err(|_| GFError::InvalidConfig {
+                            message: "mutable edge delta pending buffer is poisoned".to_owned(),
+                        })?;
                 if !pending.is_empty() {
                     self.flush_pending_locked(&mut pending)?;
                 }
@@ -520,7 +527,9 @@ mod imp {
         ) -> Result<NodeFrame> {
             let old_row = current_live
                 .row_index(old_id)
-                .ok_or_else(|| GFError::NodeNotFound { id: old_id.to_owned() })?;
+                .ok_or_else(|| GFError::NodeNotFound {
+                    id: old_id.to_owned(),
+                })?;
             let mask = BooleanArray::from(
                 (0..current_live.len())
                     .map(|row| row != old_row as usize)
@@ -594,7 +603,10 @@ mod imp {
             self.node_is_live_by_id(src) && self.node_is_live_by_id(dst)
         }
 
-        fn materialize_delta_edge_frame(&self, frozen_chunks: &[Arc<CsrIndex>]) -> Result<EdgeFrame> {
+        fn materialize_delta_edge_frame(
+            &self,
+            frozen_chunks: &[Arc<CsrIndex>],
+        ) -> Result<EdgeFrame> {
             let edge_data = self.edge_data.load_full();
             let schema = edge_data.schema().clone();
 
@@ -631,19 +643,17 @@ mod imp {
                 let array: ArrayRef = match name {
                     COL_EDGE_SRC => Arc::new(StringArray::from(src_ids.clone())),
                     COL_EDGE_DST => Arc::new(StringArray::from(dst_ids.clone())),
-                    COL_EDGE_TYPE => {
-                        Arc::new(StringArray::from(vec!["__delta__"; src_ids.len()]))
+                    COL_EDGE_TYPE => Arc::new(StringArray::from(vec!["__delta__"; src_ids.len()])),
+                    COL_EDGE_DIRECTION => {
+                        Arc::new(Int8Array::from(vec![Direction::Out.as_i8(); src_ids.len()]))
                     }
-                    COL_EDGE_DIRECTION => Arc::new(Int8Array::from(vec![
-                        Direction::Out.as_i8();
-                        src_ids.len()
-                    ])),
                     _ => new_null_array(field.data_type(), src_ids.len()),
                 };
                 columns.push(array);
             }
 
-            let batch = RecordBatch::try_new(Arc::new(schema), columns).map_err(std::io::Error::other)?;
+            let batch =
+                RecordBatch::try_new(Arc::new(schema), columns).map_err(std::io::Error::other)?;
             EdgeFrame::from_record_batch(batch)
         }
 
@@ -672,10 +682,7 @@ mod imp {
             Ok(idx)
         }
 
-        fn flush_pending_locked(
-            &self,
-            pending: &mut Vec<(u32, u32)>,
-        ) -> Result<()> {
+        fn flush_pending_locked(&self, pending: &mut Vec<(u32, u32)>) -> Result<()> {
             if pending.is_empty() {
                 return Ok(());
             }
@@ -756,11 +763,8 @@ mod imp {
                     node_schema,
                     vec![
                         Arc::new(StringArray::from(vec!["alice", "bob", "charlie"])) as ArrayRef,
-                        Arc::new(labels_array(&[
-                            &["Person"],
-                            &["Person"],
-                            &["Person"],
-                        ])) as ArrayRef,
+                        Arc::new(labels_array(&[&["Person"], &["Person"], &["Person"]]))
+                            as ArrayRef,
                     ],
                 )
                 .unwrap(),
@@ -837,11 +841,7 @@ mod imp {
                     node_schema,
                     vec![
                         Arc::new(StringArray::from(vec!["alice", "bob", "solo"])) as ArrayRef,
-                        Arc::new(labels_array(&[
-                            &["Person"],
-                            &["Person"],
-                            &["Thing"],
-                        ])) as ArrayRef,
+                        Arc::new(labels_array(&[&["Person"], &["Person"], &["Thing"]])) as ArrayRef,
                     ],
                 )
                 .unwrap(),
@@ -1281,10 +1281,7 @@ mod imp {
             })
         }
 
-        pub fn out_neighbors(
-            &self,
-            _node_idx: u32,
-        ) -> crate::Result<std::vec::IntoIter<u32>> {
+        pub fn out_neighbors(&self, _node_idx: u32) -> crate::Result<std::vec::IntoIter<u32>> {
             Err(crate::GFError::UnsupportedOperation {
                 message: "mutable graph reads are not supported on wasm32".to_owned(),
             })
@@ -1314,10 +1311,7 @@ mod imp {
             })
         }
 
-        pub fn add_nodes_batch(
-            &mut self,
-            _nodes: super::super::NodeFrame,
-        ) -> crate::Result<()> {
+        pub fn add_nodes_batch(&mut self, _nodes: super::super::NodeFrame) -> crate::Result<()> {
             Err(crate::GFError::UnsupportedOperation {
                 message: "mutable graph node appends are not supported on wasm32".to_owned(),
             })
@@ -1333,12 +1327,7 @@ mod imp {
             })
         }
 
-        pub fn update_edge(
-            &mut self,
-            _edge_row: u32,
-            _src: &str,
-            _dst: &str,
-        ) -> crate::Result<()> {
+        pub fn update_edge(&mut self, _edge_row: u32, _src: &str, _dst: &str) -> crate::Result<()> {
             Err(crate::GFError::UnsupportedOperation {
                 message: "mutable graph updates are not supported on wasm32".to_owned(),
             })

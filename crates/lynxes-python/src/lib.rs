@@ -3,8 +3,8 @@ use std::{fs, path::PathBuf, sync::Arc};
 use arrow::{
     array::{
         make_array, Array, ArrayData, ArrayRef, BooleanArray, BooleanBuilder, Float64Array,
-        Float64Builder, Int8Array, Int64Array, Int64Builder, ListBuilder,
-        StringArray, StringBuilder,
+        Float64Builder, Int64Array, Int64Builder, Int8Array, ListBuilder, StringArray,
+        StringBuilder,
     },
     datatypes::{DataType, Field, Fields, Schema},
     pyarrow::{PyArrowType, ToPyArrow},
@@ -1103,7 +1103,9 @@ impl PyMutableGraphFrame {
     }
 
     fn delete_node(&mut self, id: &str) -> PyResult<()> {
-        self.inner_mut()?.delete_node(id).map_err(gf_error_to_py_err)
+        self.inner_mut()?
+            .delete_node(id)
+            .map_err(gf_error_to_py_err)
     }
 
     fn delete_edge(&mut self, edge_row: u32) -> PyResult<()> {
@@ -2415,9 +2417,9 @@ fn record_batch_from_py_mapping(
     let mut expected_len: Option<usize> = None;
 
     for (key, value) in dict.iter() {
-        let name = key.extract::<String>().map_err(|_| {
-            PyTypeError::new_err("column mapping keys must be strings")
-        })?;
+        let name = key
+            .extract::<String>()
+            .map_err(|_| PyTypeError::new_err("column mapping keys must be strings"))?;
         let column_values = py_column_from_any(&value, &name, frame_kind)?;
         let len = column_values.len();
 
@@ -2518,9 +2520,11 @@ fn infer_column_dtype(
     let first_non_null = values
         .iter()
         .find(|value| !py_scalar_is_null(value))
-        .ok_or_else(|| PyTypeError::new_err(format!(
-            "cannot infer type for empty/null-only column {name}"
-        )))?;
+        .ok_or_else(|| {
+            PyTypeError::new_err(format!(
+                "cannot infer type for empty/null-only column {name}"
+            ))
+        })?;
 
     match first_non_null {
         ScalarValue::String(_) => Ok(DataType::Utf8),
@@ -2531,9 +2535,9 @@ fn infer_column_dtype(
             let inner = items
                 .iter()
                 .find(|value| !matches_scalar_null(value))
-                .ok_or_else(|| PyTypeError::new_err(format!(
-                    "cannot infer inner list type for column {name}"
-                )))?;
+                .ok_or_else(|| {
+                    PyTypeError::new_err(format!("cannot infer inner list type for column {name}"))
+                })?;
             let inner_type = match inner {
                 ScalarValue::String(_) => DataType::Utf8,
                 ScalarValue::Int(_) => DataType::Int64,
@@ -2545,7 +2549,9 @@ fn infer_column_dtype(
                     )))
                 }
             };
-            Ok(DataType::List(Arc::new(Field::new("item", inner_type, true))))
+            Ok(DataType::List(Arc::new(Field::new(
+                "item", inner_type, true,
+            ))))
         }
         ScalarValue::Null => Err(PyTypeError::new_err(format!(
             "cannot infer type for null-only column {name}"
@@ -2612,9 +2618,9 @@ fn build_array_from_scalar_values(values: &[ScalarValue], dtype: &DataType) -> P
             values
                 .iter()
                 .map(|value| match value {
-                    ScalarValue::Int(value) => i8::try_from(*value).map(Some).map_err(|_| {
-                        PyTypeError::new_err("int8 column value is out of range")
-                    }),
+                    ScalarValue::Int(value) => i8::try_from(*value)
+                        .map(Some)
+                        .map_err(|_| PyTypeError::new_err("int8 column value is out of range")),
                     ScalarValue::Null => Ok(None),
                     other => Err(PyTypeError::new_err(format!(
                         "expected int8 column, found {:?}",

@@ -116,13 +116,7 @@ fn gnn_random_walk_returns_length_bounded_valid_paths() {
     let adjacency = adjacency_from_coo(true);
 
     let walks = graph
-        .random_walk(
-            &["alice", "bob"],
-            3,
-            4,
-            Direction::Both,
-            &EdgeTypeSpec::Any,
-        )
+        .random_walk(&["alice", "bob"], 3, 4, Direction::Both, &EdgeTypeSpec::Any)
         .unwrap();
 
     assert_eq!(walks.len(), 8);

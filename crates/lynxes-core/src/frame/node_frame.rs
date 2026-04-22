@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use arrow_array::{
-    new_null_array, Array, ArrayRef, BooleanArray, ListArray, RecordBatch, StringArray,
-    UInt32Array,
+    new_null_array, Array, ArrayRef, BooleanArray, ListArray, RecordBatch, StringArray, UInt32Array,
 };
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use hashbrown::HashMap;
@@ -127,7 +126,10 @@ impl NodeFrame {
             return Ok(RecordBatch::new_empty(self.data.schema_ref().clone()));
         }
 
-        if let Some(&row_id) = row_ids.iter().find(|&&row_id| row_id as usize >= self.len()) {
+        if let Some(&row_id) = row_ids
+            .iter()
+            .find(|&&row_id| row_id as usize >= self.len())
+        {
             return Err(GFError::InvalidConfig {
                 message: format!(
                     "gather_rows row id {} is out of bounds for frame of length {}",

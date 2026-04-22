@@ -174,5 +174,9 @@ fn bench_pattern_match_three_hop(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_pattern_match_two_hop, bench_pattern_match_three_hop,);
+criterion_group!(
+    benches,
+    bench_pattern_match_two_hop,
+    bench_pattern_match_three_hop,
+);
 criterion_main!(benches);

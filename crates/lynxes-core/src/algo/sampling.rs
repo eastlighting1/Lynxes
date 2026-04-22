@@ -48,7 +48,11 @@ pub struct SampledSubgraph {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl GraphFrame {
-    pub fn sample_neighbors(&self, seeds: &[&str], config: &SamplingConfig) -> Result<SampledSubgraph> {
+    pub fn sample_neighbors(
+        &self,
+        seeds: &[&str],
+        config: &SamplingConfig,
+    ) -> Result<SampledSubgraph> {
         validate_sampling_config(config)?;
 
         let mut frontier = Vec::with_capacity(seeds.len());
@@ -58,7 +62,9 @@ impl GraphFrame {
         for &seed in seeds {
             let _ = self
                 .node_row_by_id(seed)
-                .ok_or_else(|| GFError::NodeNotFound { id: seed.to_owned() })?;
+                .ok_or_else(|| GFError::NodeNotFound {
+                    id: seed.to_owned(),
+                })?;
 
             if let Some(edge_idx) = self.edges().node_row_idx(seed) {
                 if seen_nodes.insert(edge_idx) {
@@ -84,7 +90,8 @@ impl GraphFrame {
 
             for &src_idx in &frontier {
                 let candidates = filtered_neighbor_candidates(self, src_idx, config);
-                let picked = sampled_neighbor_positions(candidates.len(), fan_out, config.replace, &mut rng);
+                let picked =
+                    sampled_neighbor_positions(candidates.len(), fan_out, config.replace, &mut rng);
 
                 for pos in picked {
                     let (dst_idx, edge_row) = candidates[pos];
@@ -256,7 +263,9 @@ fn filtered_neighbor_candidates_with_spec(
             .iter()
             .zip(edges.out_edge_ids(src_idx).iter())
         {
-            if seen_edge_rows.insert(edge_row) && matches_edge_type(edges.edge_type_at(edge_row), edge_type) {
+            if seen_edge_rows.insert(edge_row)
+                && matches_edge_type(edges.edge_type_at(edge_row), edge_type)
+            {
                 candidates.push((dst_idx, edge_row));
             }
         }
@@ -268,7 +277,9 @@ fn filtered_neighbor_candidates_with_spec(
             .iter()
             .zip(edges.in_edge_ids(src_idx).iter())
         {
-            if seen_edge_rows.insert(edge_row) && matches_edge_type(edges.edge_type_at(edge_row), edge_type) {
+            if seen_edge_rows.insert(edge_row)
+                && matches_edge_type(edges.edge_type_at(edge_row), edge_type)
+            {
                 candidates.push((neighbor_idx, edge_row));
             }
         }
@@ -304,7 +315,9 @@ fn resolve_walk_starts(graph: &GraphFrame, start_nodes: &[&str]) -> Result<Vec<O
         .map(|&start| {
             let _ = graph
                 .node_row_by_id(start)
-                .ok_or_else(|| GFError::NodeNotFound { id: start.to_owned() })?;
+                .ok_or_else(|| GFError::NodeNotFound {
+                    id: start.to_owned(),
+                })?;
             Ok(graph.edges().node_row_idx(start))
         })
         .collect()
@@ -315,7 +328,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow_array::builder::{ListBuilder, StringBuilder};
-    use arrow_array::{ArrayRef, Int8Array, Int64Array, ListArray, RecordBatch, StringArray};
+    use arrow_array::{ArrayRef, Int64Array, Int8Array, ListArray, RecordBatch, StringArray};
     use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 
     use crate::{
@@ -423,8 +436,12 @@ mod tests {
                         &["Person"],
                         &["Animal"],
                     ])) as ArrayRef,
-                    Arc::new(Int64Array::from(vec![Some(30), Some(20), Some(25), Some(5)]))
-                        as ArrayRef,
+                    Arc::new(Int64Array::from(vec![
+                        Some(30),
+                        Some(20),
+                        Some(25),
+                        Some(5),
+                    ])) as ArrayRef,
                 ],
             )
             .unwrap(),
@@ -435,8 +452,7 @@ mod tests {
             RecordBatch::try_new(
                 edge_schema,
                 vec![
-                    Arc::new(StringArray::from(vec!["alice", "bob", "alice", "diana"]))
-                        as ArrayRef,
+                    Arc::new(StringArray::from(vec!["alice", "bob", "alice", "diana"])) as ArrayRef,
                     Arc::new(StringArray::from(vec![
                         "bob", "charlie", "charlie", "alice",
                     ])) as ArrayRef,
@@ -701,7 +717,13 @@ mod tests {
         let graph = sample_graph();
 
         let walks = graph
-            .random_walk(&["bob"], 3, 2, Direction::Out, &EdgeTypeSpec::Single("KNOWS".to_owned()))
+            .random_walk(
+                &["bob"],
+                3,
+                2,
+                Direction::Out,
+                &EdgeTypeSpec::Single("KNOWS".to_owned()),
+            )
             .unwrap();
 
         assert_eq!(walks, vec![vec![1, 2], vec![1, 2]]);
@@ -713,7 +735,13 @@ mod tests {
         let graph = sample_graph();
 
         let walks = graph
-            .random_walk(&["charlie"], 2, 2, Direction::In, &EdgeTypeSpec::Single("KNOWS".to_owned()))
+            .random_walk(
+                &["charlie"],
+                2,
+                2,
+                Direction::In,
+                &EdgeTypeSpec::Single("KNOWS".to_owned()),
+            )
             .unwrap();
 
         for walk in walks {
@@ -737,7 +765,10 @@ mod tests {
             .random_walk(&["eve"], 5, 3, Direction::Out, &EdgeTypeSpec::Any)
             .unwrap();
 
-        assert_eq!(walks, vec![Vec::<u32>::new(), Vec::<u32>::new(), Vec::<u32>::new()]);
+        assert_eq!(
+            walks,
+            vec![Vec::<u32>::new(), Vec::<u32>::new(), Vec::<u32>::new()]
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]

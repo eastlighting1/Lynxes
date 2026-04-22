@@ -1,6 +1,6 @@
 mod early_termination;
-mod pattern_expansion;
 mod partition_parallel;
+mod pattern_expansion;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod subgraph_caching;
@@ -9,9 +9,9 @@ mod traversal_pruning;
 use crate::LogicalPlan;
 
 pub use early_termination::EarlyTermination;
+pub use partition_parallel::PartitionParallel;
 #[allow(unused_imports)]
 pub use pattern_expansion::PatternExpansion;
-pub use partition_parallel::PartitionParallel;
 pub use predicate_pushdown::PredicatePushdown;
 pub use projection_pushdown::ProjectionPushdown;
 pub use subgraph_caching::SubgraphCaching;

@@ -1,21 +1,25 @@
 import pytest
+
 import lynxes as gf
+
 
 def test_match_pattern(graph):
     """Test match_pattern result column shape validation."""
     lazy = graph.lazy()
-    
+
     # Simple 1-hop pattern: (a) -[KNOWS]-> (b)
-    query = lazy.match_pattern([
-        gf.node("a"),
-        gf.edge(edge_type="KNOWS"),
-        gf.node("b")
-    ])
-    
+    query = lazy.match_pattern(
+        [
+            gf.node("a"),
+            gf.edge(edge_type="KNOWS"),
+            gf.node("b"),
+        ]
+    )
+
     # Collect the results. Should return a pyarrow RecordBatch/Table
     try:
         result = query.collect()
-        
+
         # It should be a pyarrow Table/RecordBatch with alias columns.
         # Since it's pyarrow, it should have a 'column_names' or 'schema.names' property.
         # According to the Rust implementation, the columns should be named something like
@@ -33,7 +37,10 @@ def test_match_pattern(graph):
         pass
     except Exception as e:
         # In case it raises UnsupportedOperation
-        if "not implemented" in str(e).lower() or "unsupported" in str(e).lower():
+        if (
+            "not implemented" in str(e).lower()
+            or "unsupported" in str(e).lower()
+        ):
             pytest.skip(f"match_pattern executor not yet implemented or unsupported: {e}")
         else:
             raise

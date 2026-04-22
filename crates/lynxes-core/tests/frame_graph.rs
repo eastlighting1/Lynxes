@@ -113,8 +113,14 @@ fn to_coo_returns_expected_edge_frame_local_coordinates() {
 
     let (src, dst) = graph.to_coo();
 
-    assert_eq!(src.iter().map(|v| v.unwrap()).collect::<Vec<_>>(), vec![0, 0, 1, 3]);
-    assert_eq!(dst.iter().map(|v| v.unwrap()).collect::<Vec<_>>(), vec![1, 2, 2, 0]);
+    assert_eq!(
+        src.iter().map(|v| v.unwrap()).collect::<Vec<_>>(),
+        vec![0, 0, 1, 3]
+    );
+    assert_eq!(
+        dst.iter().map(|v| v.unwrap()).collect::<Vec<_>>(),
+        vec![1, 2, 2, 0]
+    );
     assert_eq!(src.len(), graph.edge_count());
     assert_eq!(dst.len(), graph.edge_count());
     assert_eq!(src.offset(), 0);

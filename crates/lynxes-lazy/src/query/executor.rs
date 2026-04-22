@@ -3,7 +3,9 @@ use rayon::prelude::*;
 use std::{cmp::Ordering, sync::Arc};
 
 use arrow_array::{
-    builder::{BooleanBuilder, Float64Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder},
+    builder::{
+        BooleanBuilder, Float64Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder,
+    },
     Array, ArrayRef, BooleanArray, Float64Array, Int64Array, Int8Array, ListArray, RecordBatch,
     StringArray, UInt32Array,
 };
@@ -356,11 +358,9 @@ fn execute_top_k(
                     let batch = top_k_batch(edges.to_record_batch(), by, *descending, n)?;
                     Ok(ExecutionValue::Edges(EdgeFrame::from_record_batch(batch)?))
                 }
-                ExecutionValue::Graph(_) | ExecutionValue::PatternRows(_) => Err(
-                    unsupported_plan(
-                        "TopK Sort requires a node or edge domain, not a graph or pattern-row domain",
-                    ),
-                ),
+                ExecutionValue::Graph(_) | ExecutionValue::PatternRows(_) => Err(unsupported_plan(
+                    "TopK Sort requires a node or edge domain, not a graph or pattern-row domain",
+                )),
             }
         }
         // Hint not directly above a Sort — fall through.
@@ -374,9 +374,7 @@ fn extract_node_frontier(val: ExecutionValue, context: &str) -> Result<NodeFrame
         ExecutionValue::Graph(graph) => Ok(graph.nodes().clone()),
         ExecutionValue::Nodes(nodes) => Ok(nodes),
         ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => Err(unsupported_plan(
-            &format!(
-                "{context} cannot consume an edge or pattern-row domain"
-            ),
+            &format!("{context} cannot consume an edge or pattern-row domain"),
         )),
     }
 }
@@ -1783,15 +1781,15 @@ fn execute_pattern_step(
     let mut output = Vec::new();
 
     for row in input {
-        let from_idx = row
-            .get(&step.from_alias)
-            .copied()
-            .ok_or_else(|| GFError::InvalidConfig {
-                message: format!(
-                    "pattern step requires alias '{}' to be bound before execution",
-                    step.from_alias
-                ),
-            })?;
+        let from_idx =
+            row.get(&step.from_alias)
+                .copied()
+                .ok_or_else(|| GFError::InvalidConfig {
+                    message: format!(
+                        "pattern step requires alias '{}' to be bound before execution",
+                        step.from_alias
+                    ),
+                })?;
 
         for (neighbor_idx, edge_row) in pattern_candidates(edges, from_idx, step) {
             let mut next = row.clone();
@@ -1847,7 +1845,9 @@ fn apply_pattern_where(
             Value::Bool(false) => {}
             other => {
                 return Err(GFError::TypeMismatch {
-                    message: format!("pattern where predicate must evaluate to bool, got {other:?}"),
+                    message: format!(
+                        "pattern where predicate must evaluate to bool, got {other:?}"
+                    ),
                 });
             }
         }
@@ -1864,7 +1864,9 @@ fn evaluate_pattern_expr(
 ) -> Result<Value> {
     match expr {
         Expr::Col { name } => Err(GFError::UnsupportedOperation {
-            message: format!("plain column reference '{name}' is not supported in PatternMatch where clauses"),
+            message: format!(
+                "plain column reference '{name}' is not supported in PatternMatch where clauses"
+            ),
         }),
         Expr::Literal { value } => Ok(convert_scalar(value)),
         Expr::BinaryOp { left, op, right } => evaluate_binary_values(
@@ -1892,14 +1894,18 @@ fn evaluate_pattern_expr(
                 }),
             }
         }
-        Expr::Cast { expr, dtype } => cast_value(evaluate_pattern_expr(graph, binding, expr)?, dtype),
+        Expr::Cast { expr, dtype } => {
+            cast_value(evaluate_pattern_expr(graph, binding, expr)?, dtype)
+        }
         Expr::And { left, right } => {
             let left = evaluate_pattern_expr(graph, binding, left)?;
             let right = evaluate_pattern_expr(graph, binding, right)?;
             match (left, right) {
                 (Value::Bool(left), Value::Bool(right)) => Ok(Value::Bool(left && right)),
                 (left, right) => Err(GFError::TypeMismatch {
-                    message: format!("boolean op expects bool operands, got {left:?} and {right:?}"),
+                    message: format!(
+                        "boolean op expects bool operands, got {left:?} and {right:?}"
+                    ),
                 }),
             }
         }
@@ -1909,7 +1915,9 @@ fn evaluate_pattern_expr(
             match (left, right) {
                 (Value::Bool(left), Value::Bool(right)) => Ok(Value::Bool(left || right)),
                 (left, right) => Err(GFError::TypeMismatch {
-                    message: format!("boolean op expects bool operands, got {left:?} and {right:?}"),
+                    message: format!(
+                        "boolean op expects bool operands, got {left:?} and {right:?}"
+                    ),
                 }),
             }
         }
@@ -3431,7 +3439,9 @@ mod tests {
         let empty: PatternBindings = Vec::new();
         let err = materialize_pattern_bindings(&graph, &pattern, &empty).unwrap_err();
 
-        assert!(matches!(err, GFError::InvalidConfig { message } if message.contains("used as both")));
+        assert!(
+            matches!(err, GFError::InvalidConfig { message } if message.contains("used as both"))
+        );
     }
 
     #[test]

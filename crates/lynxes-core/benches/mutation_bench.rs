@@ -49,8 +49,14 @@ fn node_frame_range(start: u32, count: u32) -> NodeFrame {
 }
 
 fn edge_frame_from_pairs(pairs: &[(u32, u32)]) -> EdgeFrame {
-    let srcs = pairs.iter().map(|(src, _)| node_id(*src)).collect::<Vec<_>>();
-    let dsts = pairs.iter().map(|(_, dst)| node_id(*dst)).collect::<Vec<_>>();
+    let srcs = pairs
+        .iter()
+        .map(|(src, _)| node_id(*src))
+        .collect::<Vec<_>>();
+    let dsts = pairs
+        .iter()
+        .map(|(_, dst)| node_id(*dst))
+        .collect::<Vec<_>>();
     let len = pairs.len();
     let schema = Arc::new(ArrowSchema::new(vec![
         Field::new(COL_EDGE_SRC, DataType::Utf8, false),
@@ -124,7 +130,12 @@ fn bench_batch_node_insert_100k(c: &mut Criterion) {
     group.throughput(Throughput::Elements(batch_count as u64));
     group.bench_function("100k", |b| {
         b.iter_batched(
-            || (empty_graph(1).into_mutable(), node_frame_range(1, batch_count)),
+            || {
+                (
+                    empty_graph(1).into_mutable(),
+                    node_frame_range(1, batch_count),
+                )
+            },
             |(mut graph, batch)| {
                 graph.add_nodes_batch(batch).unwrap();
                 black_box(graph.freeze().unwrap().node_count())
@@ -167,7 +178,12 @@ fn bench_compact_1m_edges(c: &mut Criterion) {
     let edge_count = 1_000_000u32;
     let edge_pairs = Arc::new(
         (0..edge_count)
-            .map(|i| (i % node_count, (i.wrapping_mul(31).wrapping_add(7)) % node_count))
+            .map(|i| {
+                (
+                    i % node_count,
+                    (i.wrapping_mul(31).wrapping_add(7)) % node_count,
+                )
+            })
             .collect::<Vec<_>>(),
     );
     let ids = Arc::new((0..node_count).map(node_id).collect::<Vec<_>>());
@@ -183,7 +199,9 @@ fn bench_compact_1m_edges(c: &mut Criterion) {
             || {
                 let mut graph = empty_graph(node_count).into_mutable();
                 for &(src, dst) in edge_pairs.iter() {
-                    graph.add_edge(&ids[src as usize], &ids[dst as usize]).unwrap();
+                    graph
+                        .add_edge(&ids[src as usize], &ids[dst as usize])
+                        .unwrap();
                 }
                 graph
             },

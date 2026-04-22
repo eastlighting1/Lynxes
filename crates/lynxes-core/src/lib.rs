@@ -30,8 +30,7 @@ pub use crate::frame::mutable_graph_frame::MutableGraphFrame;
 pub use crate::frame::{CsrIndex, EdgeFrame, GraphFrame, NodeFrame};
 pub use crate::query::optimizer::{
     EarlyTermination, Optimizer, OptimizerOptions, OptimizerPass, PartitionParallel,
-    PatternExpansion, PredicatePushdown, ProjectionPushdown, SubgraphCaching,
-    TraversalPruning,
+    PatternExpansion, PredicatePushdown, ProjectionPushdown, SubgraphCaching, TraversalPruning,
 };
 pub use crate::query::{
     AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan, PartitionStrategy, Pattern,

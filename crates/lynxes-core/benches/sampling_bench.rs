@@ -7,8 +7,8 @@ use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 
 use lynxes_core::{
-    Direction, EdgeFrame, EdgeTypeSpec, GraphFrame, NodeFrame, SamplingConfig,
-    COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
+    Direction, EdgeFrame, EdgeTypeSpec, GraphFrame, NodeFrame, SamplingConfig, COL_EDGE_DIRECTION,
+    COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
 };
 
 fn node_id(idx: u32) -> String {
@@ -89,9 +89,7 @@ fn seed_ids(count: u32) -> Vec<String> {
 fn bench_sample_neighbors(c: &mut Criterion) {
     let graph = graph_with_regular_out_degree(50_000, 32);
     let seeds = Arc::new(seed_ids(1_000));
-    let seed_refs = Arc::new(
-        seeds.iter().map(|s| s.as_str()).collect::<Vec<_>>()
-    );
+    let seed_refs = Arc::new(seeds.iter().map(|s| s.as_str()).collect::<Vec<_>>());
     let config = SamplingConfig {
         hops: 2,
         fan_out: vec![25, 10],
@@ -108,11 +106,9 @@ fn bench_sample_neighbors(c: &mut Criterion) {
         let seed_refs = Arc::clone(&seed_refs);
         b.iter(|| {
             black_box(
-                graph.sample_neighbors(
-                    black_box(seed_refs.as_slice()),
-                    black_box(&config),
-                )
-                .unwrap(),
+                graph
+                    .sample_neighbors(black_box(seed_refs.as_slice()), black_box(&config))
+                    .unwrap(),
             )
         });
     });
@@ -138,9 +134,7 @@ fn bench_to_coo(c: &mut Criterion) {
 fn bench_random_walk(c: &mut Criterion) {
     let graph = graph_with_regular_out_degree(50_000, 32);
     let seeds = Arc::new(seed_ids(1_000));
-    let seed_refs = Arc::new(
-        seeds.iter().map(|s| s.as_str()).collect::<Vec<_>>()
-    );
+    let seed_refs = Arc::new(seeds.iter().map(|s| s.as_str()).collect::<Vec<_>>());
 
     let mut group = c.benchmark_group("gnn_random_walk");
     group.sample_size(10);
@@ -152,14 +146,15 @@ fn bench_random_walk(c: &mut Criterion) {
             || seed_refs.as_slice(),
             |starts| {
                 black_box(
-                    graph.random_walk(
-                        black_box(starts),
-                        black_box(80),
-                        black_box(10),
-                        black_box(Direction::Out),
-                        black_box(&EdgeTypeSpec::Any),
-                    )
-                    .unwrap(),
+                    graph
+                        .random_walk(
+                            black_box(starts),
+                            black_box(80),
+                            black_box(10),
+                            black_box(Direction::Out),
+                            black_box(&EdgeTypeSpec::Any),
+                        )
+                        .unwrap(),
                 )
             },
             BatchSize::SmallInput,

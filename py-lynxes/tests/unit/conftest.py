@@ -8,7 +8,6 @@ import pytest
 
 import lynxes as gf
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TINY_SOCIAL_GF = REPO_ROOT / "examples" / "data" / "example_simple.gf"
 

@@ -227,7 +227,10 @@ fn gather_rows_returns_empty_batch_for_empty_input() {
     let gathered = frame.gather_rows(&[]).unwrap();
 
     assert_eq!(gathered.num_rows(), 0);
-    assert_eq!(gathered.num_columns(), frame.to_record_batch().num_columns());
+    assert_eq!(
+        gathered.num_columns(),
+        frame.to_record_batch().num_columns()
+    );
     assert_eq!(gathered.schema_ref(), frame.to_record_batch().schema_ref());
 }
 

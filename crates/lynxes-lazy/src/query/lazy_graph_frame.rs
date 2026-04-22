@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow_array::RecordBatch;
 use lynxes_core::{Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, Result};
 use lynxes_plan::{
     AggExpr, EdgeTypeSpec, Expr, LogicalPlan, Optimizer, OptimizerOptions, Pattern, PatternStep,
@@ -185,9 +186,11 @@ impl LazyGraphFrame {
         let plan = Optimizer::new(options).run(self.plan);
         match execute(&plan, source_graph)? {
             ExecutionValue::Graph(graph) => Ok(graph),
-            ExecutionValue::Nodes(_) | ExecutionValue::Edges(_) => Err(GFError::UnsupportedOperation {
-                message: "collect() requires a graph-domain plan; use collect_nodes() or collect_edges()".to_owned(),
-            }),
+            ExecutionValue::Nodes(_) | ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
+                Err(GFError::UnsupportedOperation {
+                    message: "collect() requires a graph-domain plan; use collect_nodes() or collect_edges() for tabular domains".to_owned(),
+                })
+            }
         }
     }
 
@@ -201,9 +204,11 @@ impl LazyGraphFrame {
         match execute(&plan, source_graph)? {
             ExecutionValue::Graph(graph) => Ok(graph.nodes().clone()),
             ExecutionValue::Nodes(nodes) => Ok(nodes),
-            ExecutionValue::Edges(_) => Err(GFError::UnsupportedOperation {
-                message: "collect_nodes() cannot materialize an edge-domain plan".to_owned(),
-            }),
+            ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
+                Err(GFError::UnsupportedOperation {
+                    message: "collect_nodes() cannot materialize an edge-domain or pattern-row plan".to_owned(),
+                })
+            }
         }
     }
 
@@ -217,9 +222,30 @@ impl LazyGraphFrame {
         match execute(&plan, source_graph)? {
             ExecutionValue::Graph(graph) => Ok(graph.edges().clone()),
             ExecutionValue::Edges(edges) => Ok(edges),
-            ExecutionValue::Nodes(_) => Err(GFError::UnsupportedOperation {
-                message: "collect_edges() cannot materialize a node-domain plan".to_owned(),
-            }),
+            ExecutionValue::Nodes(_) | ExecutionValue::PatternRows(_) => {
+                Err(GFError::UnsupportedOperation {
+                    message: "collect_edges() cannot materialize a node-domain or pattern-row plan".to_owned(),
+                })
+            }
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn collect_pattern_rows(self) -> Result<RecordBatch> {
+        self.collect_pattern_rows_with_options(OptimizerOptions::default())
+    }
+
+    #[doc(hidden)]
+    pub fn collect_pattern_rows_with_options(self, options: OptimizerOptions) -> Result<RecordBatch> {
+        let source_graph = self.require_source_graph("collect_pattern_rows")?;
+        let plan = Optimizer::new(options).run(self.plan);
+        match execute(&plan, source_graph)? {
+            ExecutionValue::PatternRows(batch) => Ok(batch),
+            ExecutionValue::Graph(_) | ExecutionValue::Nodes(_) | ExecutionValue::Edges(_) => {
+                Err(GFError::UnsupportedOperation {
+                    message: "collect_pattern_rows() requires a pattern-row domain plan".to_owned(),
+                })
+            }
         }
     }
 

@@ -202,6 +202,45 @@ fn row_returns_none_for_unknown_id() {
 }
 
 #[test]
+fn gather_rows_returns_requested_rows_in_given_order() {
+    let frame = NodeFrame::from_record_batch(two_node_batch()).unwrap();
+
+    let gathered = frame.gather_rows(&[1, 0, 1]).unwrap();
+    let ids = gathered
+        .column_by_name(COL_NODE_ID)
+        .unwrap()
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    assert_eq!(gathered.num_rows(), 3);
+    assert_eq!(
+        ids.iter().map(|v| v.unwrap()).collect::<Vec<_>>(),
+        vec!["bob", "alice", "bob"]
+    );
+}
+
+#[test]
+fn gather_rows_returns_empty_batch_for_empty_input() {
+    let frame = NodeFrame::from_record_batch(two_node_batch()).unwrap();
+
+    let gathered = frame.gather_rows(&[]).unwrap();
+
+    assert_eq!(gathered.num_rows(), 0);
+    assert_eq!(gathered.num_columns(), frame.to_record_batch().num_columns());
+    assert_eq!(gathered.schema_ref(), frame.to_record_batch().schema_ref());
+}
+
+#[test]
+fn gather_rows_rejects_out_of_bounds_indices() {
+    let frame = NodeFrame::from_record_batch(two_node_batch()).unwrap();
+
+    let err = frame.gather_rows(&[2]).unwrap_err();
+
+    assert!(matches!(err, GFError::InvalidConfig { message } if message.contains("out of bounds")));
+}
+
+#[test]
 fn filter_applies_mask_and_rebuilds_index() {
     let frame = NodeFrame::from_record_batch(two_node_batch()).unwrap();
     let filtered = frame

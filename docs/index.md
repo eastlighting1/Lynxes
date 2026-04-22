@@ -22,6 +22,9 @@ It focuses on how to install Lynxes, load data, run queries, and use the CLI fro
 - [Get started on the CLI](guides/getting-started-cli.md)
 - [Run your first graph query](guides/first-graph-query.md)
 - [Run your first algorithm](guides/first-algorithm-run.md)
+- [Preprocess a graph before training or export](guides/graph-preprocessing.md)
+- [Move sampled structure and features into a GNN pipeline](guides/gnn-integration.md)
+- [Extract KG-style bindings with `match_pattern()`](guides/kg-pattern-matching.md)
 - [Load data from `.gf`, `.gfb`, or parquet](guides/loading-data.md)
 - [Traverse a graph with `expand(...)`](guides/traversal-and-expand.md)
 - [Debug loading and query failures](guides/errors-and-debugging.md)
@@ -44,6 +47,7 @@ It focuses on how to install Lynxes, load data, run queries, and use the CLI fro
 - [`LazyGraphFrame`](reference/python/lazygraphframe.md)
 - [`NodeFrame`](reference/python/nodeframe.md)
 - [`EdgeFrame`](reference/python/edgeframe.md)
+- [`MutableGraphFrame`](reference/python/mutablegraphframe.md)
 - [`Expr`](reference/python/expr.md)
 - [`AggExpr`](reference/python/aggexpr.md)
 - [Python connectors](reference/python/connectors.md)
@@ -63,6 +67,8 @@ It focuses on how to install Lynxes, load data, run queries, and use the CLI fro
 - [Memory layout and CSR](concepts/memory-layout-and-csr.md)
 - [Lazy engine](concepts/lazy-engine.md)
 - [Trade-offs](concepts/trade-offs.md)
+- [Mutation and preprocessing](concepts/mutation-and-preprocessing.md)
+- [GNN feature store](concepts/gnn-feature-store.md)
 
 ## Distribution Paths
 
@@ -79,7 +85,9 @@ The CLI docs assume you are working from a GitHub repository checkout unless you
 - Arrow-native node and edge storage
 - CSR-backed neighbor lookups for graph traversal
 - lazy graph queries built around `.collect()`
+- a bounded mutation path for graph preprocessing before freezing back to an eager snapshot
 - eager algorithms such as shortest path, PageRank, connected components, and community detection
+- graph-to-GNN bridge helpers such as neighborhood sampling, random walks, COO export, and row gather
 - native file workflows for `.gf`, `.gfb`, and graph-shaped parquet data
 - benchmark entry points for both Rust internals and Python-surface comparisons
 

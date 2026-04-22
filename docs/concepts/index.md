@@ -12,6 +12,8 @@ If you are new to the project, reading them in order is probably the easiest way
 - [Memory layout and CSR](memory-layout-and-csr.md)
 - [Lazy engine](lazy-engine.md)
 - [Trade-offs](trade-offs.md)
+- [Mutation and preprocessing](mutation-and-preprocessing.md)
+- [GNN feature store](gnn-feature-store.md)
 
 ## What These Pages Try To Answer
 

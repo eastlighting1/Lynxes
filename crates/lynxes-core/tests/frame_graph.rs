@@ -2,7 +2,7 @@ mod common;
 
 use std::sync::Arc;
 
-use arrow_array::{ArrayRef, Int8Array, RecordBatch, StringArray};
+use arrow_array::{Array, ArrayRef, Int8Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use common::{graph_node_batch, sample_graph};
 use lynxes_core::{
@@ -105,4 +105,50 @@ fn unknown_neighbor_root_is_rejected() {
     let graph = sample_graph();
     let err = graph.out_neighbors("ghost").unwrap_err();
     assert!(matches!(err, GFError::NodeNotFound { id } if id == "ghost"));
+}
+
+#[test]
+fn to_coo_returns_expected_edge_frame_local_coordinates() {
+    let graph = sample_graph();
+
+    let (src, dst) = graph.to_coo();
+
+    assert_eq!(src.iter().map(|v| v.unwrap()).collect::<Vec<_>>(), vec![0, 0, 1, 3]);
+    assert_eq!(dst.iter().map(|v| v.unwrap()).collect::<Vec<_>>(), vec![1, 2, 2, 0]);
+    assert_eq!(src.len(), graph.edge_count());
+    assert_eq!(dst.len(), graph.edge_count());
+    assert_eq!(src.offset(), 0);
+    assert_eq!(dst.offset(), 0);
+}
+
+#[test]
+fn to_coo_uses_edge_frame_local_index_space_not_node_rows() {
+    let nodes = NodeFrame::from_record_batch(graph_node_batch()).unwrap();
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new(COL_EDGE_SRC, DataType::Utf8, false),
+        Field::new(COL_EDGE_DST, DataType::Utf8, false),
+        Field::new(COL_EDGE_TYPE, DataType::Utf8, false),
+        Field::new(COL_EDGE_DIRECTION, DataType::Int8, false),
+    ]));
+    let edges = EdgeFrame::from_record_batch(
+        RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(StringArray::from(vec!["alice"])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["charlie"])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["KNOWS"])) as ArrayRef,
+                Arc::new(Int8Array::from(vec![0i8])) as ArrayRef,
+            ],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let graph = GraphFrame::new(nodes, edges).unwrap();
+
+    let (src, dst) = graph.to_coo();
+
+    assert_eq!(src.iter().map(|v| v.unwrap()).collect::<Vec<_>>(), vec![0]);
+    assert_eq!(dst.iter().map(|v| v.unwrap()).collect::<Vec<_>>(), vec![1]);
+    assert_eq!(src.len(), 1);
+    assert_eq!(dst.len(), 1);
 }

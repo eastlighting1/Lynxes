@@ -15,6 +15,9 @@ Start here if you are using Python:
 2. [Getting Started in Python](getting-started-python.md)
 3. [Your First Graph Query](first-graph-query.md)
 4. [Your First Algorithm Run](first-algorithm-run.md)
+5. [Graph Preprocessing](graph-preprocessing.md)
+6. [GNN Integration](gnn-integration.md)
+7. [KG Pattern Matching](kg-pattern-matching.md)
 
 Start here if you want to begin from the CLI:
 

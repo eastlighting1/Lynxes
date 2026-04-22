@@ -26,7 +26,9 @@ chrono = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Native-only: not available on wasm32 (mio/tokio OS I/O, rayon threads, gRPC)
+arc-swap = "1"
 arrow-flight = { workspace = true }
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 rayon = { workspace = true }
@@ -69,4 +71,16 @@ harness = false
 
 [[bench]]
 name = "terminal_projection"
+harness = false
+
+[[bench]]
+name = "mutation_bench"
+harness = false
+
+[[bench]]
+name = "sampling_bench"
+harness = false
+
+[[bench]]
+name = "pattern_match_bench"
 harness = false

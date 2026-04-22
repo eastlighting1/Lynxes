@@ -1,4 +1,5 @@
 mod early_termination;
+mod pattern_expansion;
 mod partition_parallel;
 mod predicate_pushdown;
 mod projection_pushdown;
@@ -8,6 +9,8 @@ mod traversal_pruning;
 use crate::LogicalPlan;
 
 pub use early_termination::EarlyTermination;
+#[allow(unused_imports)]
+pub use pattern_expansion::PatternExpansion;
 pub use partition_parallel::PartitionParallel;
 pub use predicate_pushdown::PredicatePushdown;
 pub use projection_pushdown::ProjectionPushdown;
@@ -29,6 +32,7 @@ pub struct OptimizerOptions {
     pub subgraph_caching: bool,
     pub early_termination: bool,
     pub partition_parallel: bool,
+    pub pattern_expansion: bool,
 }
 
 impl Default for OptimizerOptions {
@@ -40,6 +44,7 @@ impl Default for OptimizerOptions {
             subgraph_caching: false,
             early_termination: false,
             partition_parallel: false,
+            pattern_expansion: true,
         }
     }
 }
@@ -78,6 +83,9 @@ impl Optimizer {
         }
         if options.partition_parallel {
             passes.push(Box::new(PartitionParallel));
+        }
+        if options.pattern_expansion {
+            passes.push(Box::new(PatternExpansion));
         }
 
         Self { passes }
@@ -147,6 +155,7 @@ mod tests {
         assert!(!opts.subgraph_caching);
         assert!(!opts.early_termination);
         assert!(!opts.partition_parallel);
+        assert!(opts.pattern_expansion);
     }
 
     #[test]
@@ -157,7 +166,8 @@ mod tests {
             vec![
                 "PredicatePushdown",
                 "ProjectionPushdown",
-                "TraversalPruning"
+                "TraversalPruning",
+                "PatternExpansion",
             ]
         );
     }
@@ -171,6 +181,7 @@ mod tests {
             subgraph_caching: true,
             early_termination: true,
             partition_parallel: true,
+            pattern_expansion: true,
         });
 
         assert_eq!(
@@ -182,6 +193,7 @@ mod tests {
                 "SubgraphCaching",
                 "EarlyTermination",
                 "PartitionParallel",
+                "PatternExpansion",
             ]
         );
     }
@@ -195,11 +207,17 @@ mod tests {
             subgraph_caching: true,
             early_termination: false,
             partition_parallel: true,
+            pattern_expansion: true,
         });
 
         assert_eq!(
             optimizer.pass_names(),
-            vec!["ProjectionPushdown", "SubgraphCaching", "PartitionParallel"]
+            vec![
+                "ProjectionPushdown",
+                "SubgraphCaching",
+                "PartitionParallel",
+                "PatternExpansion"
+            ]
         );
     }
 

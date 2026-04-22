@@ -1,8 +1,12 @@
 use std::{fs, path::PathBuf, sync::Arc};
 
 use arrow::{
-    array::{make_array, ArrayData, BooleanArray, StringArray},
-    datatypes::DataType,
+    array::{
+        make_array, Array, ArrayData, ArrayRef, BooleanArray, BooleanBuilder, Float64Array,
+        Float64Builder, Int8Array, Int64Array, Int64Builder, ListBuilder,
+        StringArray, StringBuilder,
+    },
+    datatypes::{DataType, Field, Fields, Schema},
     pyarrow::{PyArrowType, ToPyArrow},
     record_batch::RecordBatch,
 };
@@ -13,8 +17,9 @@ use lynxes_connect::{
 use lynxes_core::{
     AttrStatsSummary, BetweennessConfig, Connector, Direction, DisplayOptions, DisplaySlice,
     DisplayView, EdgeFrame, EdgeTypeSpec, Expr, GFError, GlimpseSummary, GraphFrame, GraphInfo,
-    GraphPartitionMethod, GraphPartitioner, NodeFrame, PageRankConfig, PartitionedGraph,
-    SchemaSummary, ShortestPathConfig, StructureStats, COL_EDGE_DST, COL_EDGE_SRC,
+    GraphPartitionMethod, GraphPartitioner, MutableGraphFrame, NodeFrame, PageRankConfig,
+    PartitionedGraph, SampledSubgraph, SamplingConfig, SchemaSummary, ShortestPathConfig,
+    StructureStats, COL_EDGE_DST, COL_EDGE_SRC,
 };
 use lynxes_io::{
     parse_gf, read_gfb, read_parquet_graph, write_gf as core_write_gf, write_gfb,
@@ -50,6 +55,11 @@ struct PyEdgeFrame {
 #[derive(Clone)]
 struct PyGraphFrame {
     inner: Arc<GraphFrame>,
+}
+
+#[pyclass(name = "MutableGraphFrame", module = "lynxes")]
+struct PyMutableGraphFrame {
+    inner: Option<MutableGraphFrame>,
 }
 
 #[pyclass(name = "LazyGraphFrame", module = "lynxes")]
@@ -106,6 +116,12 @@ struct PyPatternEdge {
     max_hops: Option<u32>,
 }
 
+#[pyclass(name = "SampledSubgraph", module = "lynxes")]
+#[derive(Clone)]
+struct PySampledSubgraph {
+    inner: SampledSubgraph,
+}
+
 impl PyNodeFrame {
     fn new(inner: NodeFrame) -> Self {
         Self {
@@ -159,6 +175,26 @@ impl PyGraphFrame {
 
 impl PyLazyGraphFrame {
     fn new(inner: LazyGraphFrame) -> Self {
+        Self { inner }
+    }
+}
+
+impl PyMutableGraphFrame {
+    fn new(inner: MutableGraphFrame) -> Self {
+        Self { inner: Some(inner) }
+    }
+
+    fn inner_mut(&mut self) -> PyResult<&mut MutableGraphFrame> {
+        self.inner.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err(
+                "MutableGraphFrame has already been frozen and can no longer be used",
+            )
+        })
+    }
+}
+
+impl PySampledSubgraph {
+    fn new(inner: SampledSubgraph) -> Self {
         Self { inner }
     }
 }
@@ -235,6 +271,13 @@ impl PyAggExpr {
 #[pymethods]
 impl PyNodeFrame {
     #[classmethod]
+    fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let batch = record_batch_from_py_mapping(data, FrameKind::Node)?;
+        let frame = NodeFrame::from_record_batch(batch).map_err(gf_error_to_py_err)?;
+        Ok(Self::new(frame))
+    }
+
+    #[classmethod]
     fn from_arrow(_cls: &Bound<'_, PyType>, batch: PyArrowType<RecordBatch>) -> PyResult<Self> {
         let frame = NodeFrame::from_record_batch(batch.0).map_err(gf_error_to_py_err)?;
         Ok(Self::new(frame))
@@ -301,6 +344,14 @@ impl PyNodeFrame {
         Ok(Self::new(result))
     }
 
+    fn gather_rows(&self, row_ids: Vec<u32>, py: Python<'_>) -> PyResult<PyObject> {
+        self.inner
+            .gather_rows(&row_ids)
+            .map_err(gf_error_to_py_err)?
+            .to_pyarrow(py)
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
+
     fn to_arrow(&self, py: Python<'_>) -> PyResult<PyObject> {
         self.to_arrow_impl(py)
     }
@@ -312,6 +363,13 @@ impl PyNodeFrame {
 
 #[pymethods]
 impl PyEdgeFrame {
+    #[classmethod]
+    fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let batch = record_batch_from_py_mapping(data, FrameKind::Edge)?;
+        let frame = EdgeFrame::from_record_batch(batch).map_err(gf_error_to_py_err)?;
+        Ok(Self::new(frame))
+    }
+
     #[classmethod]
     fn from_arrow(_cls: &Bound<'_, PyType>, batch: PyArrowType<RecordBatch>) -> PyResult<Self> {
         let frame = EdgeFrame::from_record_batch(batch.0).map_err(gf_error_to_py_err)?;
@@ -406,6 +464,15 @@ impl PyEdgeFrame {
 #[pymethods]
 impl PyGraphFrame {
     #[classmethod]
+    fn from_dicts(
+        _cls: &Bound<'_, PyType>,
+        nodes: &Bound<'_, PyAny>,
+        edges: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        graph_from_py_mappings(nodes, edges)
+    }
+
+    #[classmethod]
     fn from_frames(
         _cls: &Bound<'_, PyType>,
         nodes: PyRef<'_, PyNodeFrame>,
@@ -422,6 +489,68 @@ impl PyGraphFrame {
 
     fn edges(&self) -> PyEdgeFrame {
         PyEdgeFrame::from_arc(Arc::new(self.inner.edges().clone()))
+    }
+
+    fn to_coo(&self, py: Python<'_>) -> PyResult<(PyObject, PyObject)> {
+        let (src, dst) = self.inner.to_coo();
+        let src: PyObject = src
+            .to_data()
+            .to_pyarrow(py)
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+        let dst: PyObject = dst
+            .to_data()
+            .to_pyarrow(py)
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+        Ok((src, dst))
+    }
+
+    #[pyo3(signature = (seed_nodes, *, hops=1, fan_out=None, direction="out", edge_type=None, replace=false))]
+    fn sample_neighbors(
+        &self,
+        seed_nodes: Vec<String>,
+        hops: usize,
+        fan_out: Option<Vec<usize>>,
+        direction: &str,
+        edge_type: Option<&Bound<'_, PyAny>>,
+        replace: bool,
+    ) -> PyResult<PySampledSubgraph> {
+        let direction = python_to_direction(direction)?;
+        let edge_type = normalize_edge_type_spec(edge_type)?;
+        let fan_out = fan_out.unwrap_or_else(|| vec![25; hops.max(1)]);
+        let config = SamplingConfig {
+            hops,
+            fan_out,
+            direction,
+            edge_type,
+            replace,
+        };
+        let seed_refs: Vec<&str> = seed_nodes.iter().map(String::as_str).collect();
+        let sampled = self
+            .inner
+            .sample_neighbors(&seed_refs, &config)
+            .map_err(gf_error_to_py_err)?;
+        Ok(PySampledSubgraph::new(sampled))
+    }
+
+    #[pyo3(signature = (start_nodes, *, length=80, walks_per_node=10, direction="out", edge_type=None))]
+    fn random_walk(
+        &self,
+        start_nodes: Vec<String>,
+        length: usize,
+        walks_per_node: usize,
+        direction: &str,
+        edge_type: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Vec<Vec<u32>>> {
+        let direction = python_to_direction(direction)?;
+        let edge_type = normalize_edge_type_spec(edge_type)?;
+        let start_refs: Vec<&str> = start_nodes.iter().map(String::as_str).collect();
+        self.inner
+            .random_walk(&start_refs, length, walks_per_node, direction, &edge_type)
+            .map_err(gf_error_to_py_err)
+    }
+
+    fn into_mutable(&self) -> PyMutableGraphFrame {
+        PyMutableGraphFrame::new(self.inner.as_ref().clone().into_mutable())
     }
 
     fn node_count(&self) -> usize {
@@ -880,9 +1009,22 @@ impl PyLazyGraphFrame {
         self.inner.explain()
     }
 
-    fn collect(&self) -> PyResult<PyGraphFrame> {
-        let graph = self.inner.clone().collect().map_err(gf_error_to_py_err)?;
-        Ok(PyGraphFrame::new(graph))
+    fn collect(&self, py: Python<'_>) -> PyResult<PyObject> {
+        match self.inner.clone().collect() {
+            Ok(graph) => Py::new(py, PyGraphFrame::new(graph)).map(|obj| obj.into_py(py)),
+            Err(err) => match self.inner.clone().collect_pattern_rows() {
+                Ok(batch) => batch
+                    .to_pyarrow(py)
+                    .map_err(|arrow_err| PyRuntimeError::new_err(arrow_err.to_string())),
+                Err(pattern_err) => {
+                    if matches!(pattern_err, GFError::UnsupportedOperation { .. }) {
+                        Err(gf_error_to_py_err(err))
+                    } else {
+                        Err(gf_error_to_py_err(pattern_err))
+                    }
+                }
+            },
+        }
     }
 
     fn collect_nodes(&self) -> PyResult<PyNodeFrame> {
@@ -901,6 +1043,101 @@ impl PyLazyGraphFrame {
             .collect_edges()
             .map_err(gf_error_to_py_err)?;
         Ok(PyEdgeFrame::new(edges))
+    }
+}
+
+#[pymethods]
+impl PySampledSubgraph {
+    #[getter]
+    fn node_indices(&self) -> Vec<u32> {
+        self.inner.node_indices.clone()
+    }
+
+    #[getter]
+    fn edge_src(&self) -> Vec<u32> {
+        self.inner.edge_src.clone()
+    }
+
+    #[getter]
+    fn edge_dst(&self) -> Vec<u32> {
+        self.inner.edge_dst.clone()
+    }
+
+    #[getter]
+    fn edge_row_ids(&self) -> Vec<u32> {
+        self.inner.edge_row_ids.clone()
+    }
+
+    #[getter]
+    fn node_row_ids(&self) -> Vec<u32> {
+        self.inner.node_row_ids.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SampledSubgraph(nodes={}, edges={})",
+            self.inner.node_indices.len(),
+            self.inner.edge_src.len()
+        )
+    }
+}
+
+#[pymethods]
+impl PyMutableGraphFrame {
+    fn add_node(&mut self, node: PyRef<'_, PyNodeFrame>) -> PyResult<()> {
+        self.inner_mut()?
+            .add_node((*node.inner).clone())
+            .map_err(gf_error_to_py_err)
+    }
+
+    fn add_nodes_batch(&mut self, nodes: PyRef<'_, PyNodeFrame>) -> PyResult<()> {
+        self.inner_mut()?
+            .add_nodes_batch((*nodes.inner).clone())
+            .map_err(gf_error_to_py_err)
+    }
+
+    fn add_edge(&mut self, src: &str, dst: &str) -> PyResult<()> {
+        self.inner_mut()?
+            .add_edge(src, dst)
+            .map_err(gf_error_to_py_err)
+    }
+
+    fn delete_node(&mut self, id: &str) -> PyResult<()> {
+        self.inner_mut()?.delete_node(id).map_err(gf_error_to_py_err)
+    }
+
+    fn delete_edge(&mut self, edge_row: u32) -> PyResult<()> {
+        self.inner_mut()?
+            .delete_edge(edge_row)
+            .map_err(gf_error_to_py_err)
+    }
+
+    fn update_node(&mut self, old_id: &str, node: PyRef<'_, PyNodeFrame>) -> PyResult<()> {
+        self.inner_mut()?
+            .update_node(old_id, (*node.inner).clone())
+            .map_err(gf_error_to_py_err)
+    }
+
+    fn compact(&mut self) -> PyResult<()> {
+        self.inner_mut()?.compact().map_err(gf_error_to_py_err)
+    }
+
+    fn freeze(&mut self) -> PyResult<PyGraphFrame> {
+        let inner = self.inner.take().ok_or_else(|| {
+            PyRuntimeError::new_err(
+                "MutableGraphFrame has already been frozen and can no longer be used",
+            )
+        })?;
+        let graph = inner.freeze().map_err(gf_error_to_py_err)?;
+        Ok(PyGraphFrame::new(graph))
+    }
+
+    fn __repr__(&self) -> String {
+        if self.inner.is_some() {
+            "MutableGraphFrame(active)".to_owned()
+        } else {
+            "MutableGraphFrame(frozen)".to_owned()
+        }
     }
 }
 
@@ -1295,6 +1532,12 @@ fn edge(
 }
 
 #[pyfunction]
+#[pyo3(signature = (*, nodes, edges))]
+fn graph(nodes: &Bound<'_, PyAny>, edges: &Bound<'_, PyAny>) -> PyResult<PyGraphFrame> {
+    graph_from_py_mappings(nodes, edges)
+}
+
+#[pyfunction]
 fn read_gf(path: &Bound<'_, PyAny>) -> PyResult<PyGraphFrame> {
     let path = path_from_py_any(path)?;
     let source = fs::read_to_string(&path)
@@ -1512,17 +1755,20 @@ fn _lynxes(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNodeFrame>()?;
     m.add_class::<PyEdgeFrame>()?;
     m.add_class::<PyGraphFrame>()?;
+    m.add_class::<PyMutableGraphFrame>()?;
     m.add_class::<PyLazyGraphFrame>()?;
     m.add_class::<PyExpr>()?;
     m.add_class::<PyAggExpr>()?;
     m.add_class::<PyStrExprNamespace>()?;
     m.add_class::<PyPatternNode>()?;
     m.add_class::<PyPatternEdge>()?;
+    m.add_class::<PySampledSubgraph>()?;
     m.add_class::<PyPartitionedGraph>()?;
 
     m.add_function(wrap_pyfunction!(col, m)?)?;
     m.add_function(wrap_pyfunction!(node, m)?)?;
     m.add_function(wrap_pyfunction!(edge, m)?)?;
+    m.add_function(wrap_pyfunction!(graph, m)?)?;
     m.add_function(wrap_pyfunction!(count, m)?)?;
     m.add_function(wrap_pyfunction!(sum, m)?)?;
     m.add_function(wrap_pyfunction!(mean, m)?)?;
@@ -2136,6 +2382,370 @@ fn path_from_py_any(path: &Bound<'_, PyAny>) -> PyResult<PathBuf> {
     Err(PyTypeError::new_err(
         "path arguments must be str or os.PathLike[str]",
     ))
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FrameKind {
+    Node,
+    Edge,
+}
+
+fn graph_from_py_mappings(
+    nodes: &Bound<'_, PyAny>,
+    edges: &Bound<'_, PyAny>,
+) -> PyResult<PyGraphFrame> {
+    let node_batch = record_batch_from_py_mapping(nodes, FrameKind::Node)?;
+    let edge_batch = record_batch_from_py_mapping(edges, FrameKind::Edge)?;
+    let nodes = NodeFrame::from_record_batch(node_batch).map_err(gf_error_to_py_err)?;
+    let edges = EdgeFrame::from_record_batch(edge_batch).map_err(gf_error_to_py_err)?;
+    let graph = GraphFrame::new(nodes, edges).map_err(gf_error_to_py_err)?;
+    Ok(PyGraphFrame::new(graph))
+}
+
+fn record_batch_from_py_mapping(
+    data: &Bound<'_, PyAny>,
+    frame_kind: FrameKind,
+) -> PyResult<RecordBatch> {
+    let dict = data
+        .downcast::<pyo3::types::PyDict>()
+        .map_err(|_| PyTypeError::new_err("expected a dict[str, list] column mapping"))?;
+
+    let mut fields = Vec::with_capacity(dict.len());
+    let mut arrays: Vec<ArrayRef> = Vec::with_capacity(dict.len());
+    let mut expected_len: Option<usize> = None;
+
+    for (key, value) in dict.iter() {
+        let name = key.extract::<String>().map_err(|_| {
+            PyTypeError::new_err("column mapping keys must be strings")
+        })?;
+        let column_values = py_column_from_any(&value, &name, frame_kind)?;
+        let len = column_values.len();
+
+        if let Some(expected) = expected_len {
+            if len != expected {
+                return Err(PyValueError::new_err(format!(
+                    "all columns must have the same length (column {name} has {len}, expected {expected})"
+                )));
+            }
+        } else {
+            expected_len = Some(len);
+        }
+
+        let data_type = infer_column_dtype(&name, frame_kind, &column_values)?;
+        let nullable = column_values.iter().any(py_scalar_is_null)
+            || column_values.iter().any(|value| match value {
+                ScalarValue::List(items) => items.iter().any(matches_scalar_null),
+                _ => false,
+            });
+        let array = build_array_from_scalar_values(&column_values, &data_type)?;
+        fields.push(Field::new(&name, data_type, nullable));
+        arrays.push(array);
+    }
+
+    RecordBatch::try_new(Arc::new(Schema::new(Fields::from(fields))), arrays)
+        .map_err(|err| PyValueError::new_err(err.to_string()))
+}
+
+fn py_column_from_any(
+    value: &Bound<'_, PyAny>,
+    name: &str,
+    frame_kind: FrameKind,
+) -> PyResult<Vec<ScalarValue>> {
+    let iter = if let Ok(values) = value.downcast::<PyList>() {
+        values.iter().collect::<Vec<_>>()
+    } else if let Ok(values) = value.downcast::<PyTuple>() {
+        values.iter().collect::<Vec<_>>()
+    } else {
+        return Err(PyTypeError::new_err(format!(
+            "column {name} must be a list or tuple"
+        )));
+    };
+
+    iter.into_iter()
+        .map(|item| scalar_from_py_any_with_context(&item, name, frame_kind))
+        .collect()
+}
+
+fn scalar_from_py_any_with_context(
+    value: &Bound<'_, PyAny>,
+    name: &str,
+    frame_kind: FrameKind,
+) -> PyResult<ScalarValue> {
+    match reserved_dtype(name, frame_kind) {
+        Some(DataType::Int8) => {
+            if value.is_none() {
+                Ok(ScalarValue::Null)
+            } else {
+                value
+                    .extract::<i8>()
+                    .map(|v| ScalarValue::Int(v as i64))
+                    .map_err(|_| {
+                        PyTypeError::new_err(format!(
+                            "column {name} must contain int8-compatible values"
+                        ))
+                    })
+            }
+        }
+        _ => scalar_from_py_any(value),
+    }
+}
+
+fn reserved_dtype(name: &str, frame_kind: FrameKind) -> Option<DataType> {
+    match (frame_kind, name) {
+        (FrameKind::Node, "_id") => Some(DataType::Utf8),
+        (FrameKind::Node, "_label") => Some(DataType::List(Arc::new(Field::new(
+            "item",
+            DataType::Utf8,
+            true,
+        )))),
+        (FrameKind::Edge, "_src") => Some(DataType::Utf8),
+        (FrameKind::Edge, "_dst") => Some(DataType::Utf8),
+        (FrameKind::Edge, "_type") => Some(DataType::Utf8),
+        (FrameKind::Edge, "_direction") => Some(DataType::Int8),
+        _ => None,
+    }
+}
+
+fn infer_column_dtype(
+    name: &str,
+    frame_kind: FrameKind,
+    values: &[ScalarValue],
+) -> PyResult<DataType> {
+    if let Some(dtype) = reserved_dtype(name, frame_kind) {
+        return Ok(dtype);
+    }
+
+    let first_non_null = values
+        .iter()
+        .find(|value| !py_scalar_is_null(value))
+        .ok_or_else(|| PyTypeError::new_err(format!(
+            "cannot infer type for empty/null-only column {name}"
+        )))?;
+
+    match first_non_null {
+        ScalarValue::String(_) => Ok(DataType::Utf8),
+        ScalarValue::Int(_) => Ok(DataType::Int64),
+        ScalarValue::Float(_) => Ok(DataType::Float64),
+        ScalarValue::Bool(_) => Ok(DataType::Boolean),
+        ScalarValue::List(items) => {
+            let inner = items
+                .iter()
+                .find(|value| !matches_scalar_null(value))
+                .ok_or_else(|| PyTypeError::new_err(format!(
+                    "cannot infer inner list type for column {name}"
+                )))?;
+            let inner_type = match inner {
+                ScalarValue::String(_) => DataType::Utf8,
+                ScalarValue::Int(_) => DataType::Int64,
+                ScalarValue::Float(_) => DataType::Float64,
+                ScalarValue::Bool(_) => DataType::Boolean,
+                ScalarValue::List(_) | ScalarValue::Null => {
+                    return Err(PyTypeError::new_err(format!(
+                        "column {name} uses an unsupported nested list shape"
+                    )))
+                }
+            };
+            Ok(DataType::List(Arc::new(Field::new("item", inner_type, true))))
+        }
+        ScalarValue::Null => Err(PyTypeError::new_err(format!(
+            "cannot infer type for null-only column {name}"
+        ))),
+    }
+}
+
+fn build_array_from_scalar_values(values: &[ScalarValue], dtype: &DataType) -> PyResult<ArrayRef> {
+    match dtype {
+        DataType::Utf8 => Ok(Arc::new(StringArray::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    ScalarValue::String(value) => Ok(Some(value.clone())),
+                    ScalarValue::Null => Ok(None),
+                    other => Err(PyTypeError::new_err(format!(
+                        "expected string column, found {:?}",
+                        other
+                    ))),
+                })
+                .collect::<PyResult<Vec<_>>>()?,
+        ))),
+        DataType::Int64 => Ok(Arc::new(Int64Array::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    ScalarValue::Int(value) => Ok(Some(*value)),
+                    ScalarValue::Null => Ok(None),
+                    other => Err(PyTypeError::new_err(format!(
+                        "expected int column, found {:?}",
+                        other
+                    ))),
+                })
+                .collect::<PyResult<Vec<_>>>()?,
+        ))),
+        DataType::Float64 => Ok(Arc::new(Float64Array::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    ScalarValue::Float(value) => Ok(Some(*value)),
+                    ScalarValue::Int(value) => Ok(Some(*value as f64)),
+                    ScalarValue::Null => Ok(None),
+                    other => Err(PyTypeError::new_err(format!(
+                        "expected float column, found {:?}",
+                        other
+                    ))),
+                })
+                .collect::<PyResult<Vec<_>>>()?,
+        ))),
+        DataType::Boolean => Ok(Arc::new(BooleanArray::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    ScalarValue::Bool(value) => Ok(Some(*value)),
+                    ScalarValue::Null => Ok(None),
+                    other => Err(PyTypeError::new_err(format!(
+                        "expected bool column, found {:?}",
+                        other
+                    ))),
+                })
+                .collect::<PyResult<Vec<_>>>()?,
+        ))),
+        DataType::Int8 => Ok(Arc::new(Int8Array::from(
+            values
+                .iter()
+                .map(|value| match value {
+                    ScalarValue::Int(value) => i8::try_from(*value).map(Some).map_err(|_| {
+                        PyTypeError::new_err("int8 column value is out of range")
+                    }),
+                    ScalarValue::Null => Ok(None),
+                    other => Err(PyTypeError::new_err(format!(
+                        "expected int8 column, found {:?}",
+                        other
+                    ))),
+                })
+                .collect::<PyResult<Vec<_>>>()?,
+        ))),
+        DataType::List(field) => match field.data_type() {
+            DataType::Utf8 => Ok(Arc::new(build_list_array::<StringBuilder, _>(
+                values,
+                StringBuilder::new(),
+                |builder, value| match value {
+                    ScalarValue::String(value) => {
+                        builder.append_value(value);
+                        Ok(())
+                    }
+                    ScalarValue::Null => {
+                        builder.append_null();
+                        Ok(())
+                    }
+                    other => Err(PyTypeError::new_err(format!(
+                        "expected list[string] column, found {:?}",
+                        other
+                    ))),
+                },
+            )?)),
+            DataType::Int64 => Ok(Arc::new(build_list_array::<Int64Builder, _>(
+                values,
+                Int64Builder::new(),
+                |builder, value| match value {
+                    ScalarValue::Int(value) => {
+                        builder.append_value(*value);
+                        Ok(())
+                    }
+                    ScalarValue::Null => {
+                        builder.append_null();
+                        Ok(())
+                    }
+                    other => Err(PyTypeError::new_err(format!(
+                        "expected list[int] column, found {:?}",
+                        other
+                    ))),
+                },
+            )?)),
+            DataType::Float64 => Ok(Arc::new(build_list_array::<Float64Builder, _>(
+                values,
+                Float64Builder::new(),
+                |builder, value| match value {
+                    ScalarValue::Float(value) => {
+                        builder.append_value(*value);
+                        Ok(())
+                    }
+                    ScalarValue::Int(value) => {
+                        builder.append_value(*value as f64);
+                        Ok(())
+                    }
+                    ScalarValue::Null => {
+                        builder.append_null();
+                        Ok(())
+                    }
+                    other => Err(PyTypeError::new_err(format!(
+                        "expected list[float] column, found {:?}",
+                        other
+                    ))),
+                },
+            )?)),
+            DataType::Boolean => Ok(Arc::new(build_list_array::<BooleanBuilder, _>(
+                values,
+                BooleanBuilder::new(),
+                |builder, value| match value {
+                    ScalarValue::Bool(value) => {
+                        builder.append_value(*value);
+                        Ok(())
+                    }
+                    ScalarValue::Null => {
+                        builder.append_null();
+                        Ok(())
+                    }
+                    other => Err(PyTypeError::new_err(format!(
+                        "expected list[bool] column, found {:?}",
+                        other
+                    ))),
+                },
+            )?)),
+            other => Err(PyTypeError::new_err(format!(
+                "unsupported list element type: {other:?}"
+            ))),
+        },
+        other => Err(PyTypeError::new_err(format!(
+            "unsupported inferred column type: {other:?}"
+        ))),
+    }
+}
+
+fn build_list_array<B, F>(
+    values: &[ScalarValue],
+    value_builder: B,
+    mut append_value: F,
+) -> PyResult<arrow::array::ListArray>
+where
+    B: arrow::array::ArrayBuilder,
+    F: FnMut(&mut B, &ScalarValue) -> PyResult<()>,
+{
+    let mut builder = ListBuilder::new(value_builder);
+    for value in values {
+        match value {
+            ScalarValue::List(items) => {
+                for item in items {
+                    append_value(builder.values(), item)?;
+                }
+                builder.append(true);
+            }
+            ScalarValue::Null => builder.append(false),
+            other => {
+                return Err(PyTypeError::new_err(format!(
+                    "expected list column, found {:?}",
+                    other
+                )))
+            }
+        }
+    }
+    Ok(builder.finish())
+}
+
+fn py_scalar_is_null(value: &ScalarValue) -> bool {
+    matches!(value, ScalarValue::Null)
+}
+
+fn matches_scalar_null(value: &ScalarValue) -> bool {
+    matches!(value, ScalarValue::Null)
 }
 
 /// Convert a Python list of alternating `PatternNode`/`PatternEdge`/`PatternNode` …

@@ -86,3 +86,14 @@ Use eager algorithms when you want:
 - ranking scores
 - connectivity assignments
 - community assignments
+
+## Sampling For GNN Pipelines
+
+Not every graph workflow ends in an eager algorithm result. If your next step is a minibatch training pipeline, the more relevant methods are the graph-side bridge helpers on `GraphFrame`:
+
+- `sample_neighbors(...)`
+- `random_walk(...)`
+- `to_coo()`
+- `nodes().gather_rows(...)`
+
+Those are better understood as preprocessing and handoff utilities than as eager graph algorithms. If that is the workflow you are after, continue with [GNN integration](gnn-integration.md).

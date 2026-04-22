@@ -128,16 +128,20 @@ class TestMatchPattern:
         )
         assert "PatternMatch" in lazy.explain()
 
-    def test_match_pattern_collect_raises_not_implemented(self, graph):
-        lazy = graph.lazy().match_pattern(
+    def test_match_pattern_collect_returns_record_batch(self, graph):
+        import pyarrow as pa
+
+        result = graph.lazy().match_pattern(
             [
                 gf.node("a", "Person"),
                 gf.edge("KNOWS"),
                 gf.node("b", "Person"),
             ]
-        )
-        with pytest.raises((NotImplementedError, RuntimeError)):
-            lazy.collect()
+        ).collect()
+
+        assert isinstance(result, pa.RecordBatch)
+        assert "a._id" in result.schema.names
+        assert "b._id" in result.schema.names
 
     def test_match_pattern_invalid_steps_raises(self, graph):
         with pytest.raises((TypeError, ValueError)):
@@ -153,3 +157,16 @@ class TestMatchPattern:
             where_=gf.col("a.age") > 25,
         )
         assert "PatternMatch" in lazy.explain()
+
+    def test_match_pattern_collect_with_where_clause_filters_rows(self, graph):
+        result = graph.lazy().match_pattern(
+            [
+                gf.node("a", "Person"),
+                gf.edge("KNOWS"),
+                gf.node("b", "Person"),
+            ],
+            where_=gf.col("a.age") > 25,
+        ).collect()
+
+        a_ids = result.column("a._id").to_pylist()
+        assert a_ids == ["alice", "alice"]

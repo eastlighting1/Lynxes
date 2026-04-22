@@ -11,10 +11,13 @@ Most Python users do not instantiate `GraphFrame` directly. Common construction 
 - `lynxes.read_gf(path)`
 - `lynxes.read_gfb(path)`
 - `lynxes.read_parquet_graph(nodes_path, edges_path)`
+- `lynxes.graph(nodes={...}, edges={...})`
 - `lazy.collect()`
+- `GraphFrame.from_dicts(nodes, edges)`
 - `GraphFrame.from_frames(nodes, edges)`
 
 `GraphFrame.from_frames(nodes, edges)` is the explicit constructor when you already have a `NodeFrame` and `EdgeFrame` and want to reassemble them into a graph. It validates that the reserved graph semantics still line up.
+`lynxes.graph(nodes={...}, edges={...})` is the shortest Python-native constructor when you want to build a graph directly from plain column data.
 
 ## Method Summary
 
@@ -25,6 +28,8 @@ Most Python users do not instantiate `GraphFrame` directly. Common construction 
 | `nodes()` | `NodeFrame` | Returns the node-side frame view. |
 | `edges()` | `EdgeFrame` | Returns the edge-side frame view. |
 | `lazy()` | `LazyGraphFrame` | Starts a lazy query from the current graph. |
+| `into_mutable()` | `MutableGraphFrame` | Starts a bounded preprocessing workflow. |
+| `to_coo()` | `tuple[pyarrow.Array, pyarrow.Array]` | Exposes graph structure in compact COO form. |
 | `node_count()` | `int` | Count of node rows in the current graph. |
 | `edge_count()` | `int` | Count of edge rows in the current graph. |
 | `density()` | `float` | Density summary computed from the current graph. |
@@ -42,6 +47,8 @@ Most Python users do not instantiate `GraphFrame` directly. Common construction 
 | Method | Returns | Notes |
 | :--- | :--- | :--- |
 | `pagerank(...)` | `NodeFrame` | Returns node-level PageRank scores. |
+| `sample_neighbors(...)` | `SampledSubgraph` | Returns a sampled neighborhood subgraph. |
+| `random_walk(...)` | `list[list[int]]` | Returns walk paths in compact node index space. |
 | `connected_components()` | `NodeFrame` | Returns node-level component assignments. |
 | `largest_connected_component()` | `GraphFrame` | Returns the largest component as a graph. |
 | `shortest_path(...)` | `list[str] \| None` | Returns one path as node ids, or `None`. |
@@ -84,6 +91,25 @@ Returns a new eager `GraphFrame`.
 - `ValueError` if the frames do not form a valid graph shape
 - `TypeError` if either argument is not the expected frame wrapper
 
+### `GraphFrame.from_dicts(nodes, edges) -> GraphFrame`
+
+Create a graph directly from plain Python column mappings.
+
+#### Parameters
+
+| Name | Type | Required | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `nodes` | `dict[str, list]` | Required | - | Node columns, including `_id` and `_label`. |
+| `edges` | `dict[str, list]` | Required | - | Edge columns, including `_src`, `_dst`, `_type`, and `_direction`. |
+
+#### Returns
+
+Returns a new eager `GraphFrame`.
+
+#### Notes
+
+This is the closest Python-side equivalent to a one-line dataframe constructor. Lynxes will lower the plain Python column data into Arrow-backed frames internally.
+
 ### `neighbors(node_id, direction="out") -> list[str]`
 
 Return neighbor ids for a single node.
@@ -103,6 +129,38 @@ Returns a Python `list[str]` containing neighboring node ids in the requested di
 
 - `KeyError` if `node_id` does not exist in the graph
 - `ValueError` if `direction` is not one of the accepted values
+
+### `into_mutable() -> MutableGraphFrame`
+
+Move into the mutation-backed preprocessing surface.
+
+#### Returns
+
+Returns a `MutableGraphFrame`. The intended flow is to apply a bounded rewrite, then call `freeze()` to get back to a normal `GraphFrame`.
+
+### `to_coo() -> tuple[pyarrow.Array, pyarrow.Array]`
+
+Expose the graph topology as COO arrays.
+
+#### Returns
+
+Returns `(src, dst)` as two pyarrow arrays. The coordinates use the compact `EdgeFrame` local node index space, not the original `NodeFrame` row positions.
+
+### `sample_neighbors(seed_nodes, hops=1, fan_out=None, direction="out", edge_type=None, replace=False) -> SampledSubgraph`
+
+Sample a neighborhood for minibatch-style graph workflows.
+
+#### Notes
+
+The returned object carries both compact graph-local structure and `node_row_ids` for feature gather.
+
+### `random_walk(start_nodes, length=80, walks_per_node=10, direction="out", edge_type=None) -> list[list[int]]`
+
+Generate compact-index random walks from one or more start nodes.
+
+#### Notes
+
+The returned integer paths live in the compact graph-local node index space.
 
 ### `pagerank(damping=0.85, max_iter=100, epsilon=1e-6, weight_col=None) -> NodeFrame`
 
@@ -174,3 +232,4 @@ Returns a `NodeFrame` with one row per node and community-related output columns
 `GraphFrame` is already materialized. Methods like `node_count()`, `neighbors(...)`, `pagerank(...)`, or `shortest_path(...)` run against the current in-memory graph immediately. If you want planning and deferred execution instead, call `graph.lazy()` and move into the `LazyGraphFrame` surface.
 
 For graph export behavior, continue with [Graph export methods](graph-export.md). For how engine errors surface in Python, continue with [Python error mapping](errors.md).
+For the preprocessing surface, continue with [`MutableGraphFrame`](mutablegraphframe.md).

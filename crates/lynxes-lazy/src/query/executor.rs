@@ -3,28 +3,71 @@ use rayon::prelude::*;
 use std::{cmp::Ordering, sync::Arc};
 
 use arrow_array::{
-    builder::{BooleanBuilder, Float64Builder, Int64Builder, ListBuilder, StringBuilder},
-    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, ListArray, RecordBatch, StringArray,
-    UInt32Array,
+    builder::{BooleanBuilder, Float64Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder},
+    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, Int8Array, ListArray, RecordBatch,
+    StringArray, UInt32Array,
 };
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 
 use lynxes_core::{
     Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, Result, COL_EDGE_DIRECTION, COL_EDGE_DST,
     COL_EDGE_SRC, COL_EDGE_TYPE,
 };
 use lynxes_plan::{
-    AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan, PatternStep, ScalarValue,
-    StringOp, UnaryOp,
+    AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan, Pattern, PatternStep,
+    ScalarValue, StringOp, UnaryOp,
 };
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[allow(dead_code, clippy::large_enum_variant)]
 pub(crate) enum ExecutionValue {
     Graph(GraphFrame),
     Nodes(NodeFrame),
     Edges(EdgeFrame),
+    PatternRows(RecordBatch),
+}
+
+/// One row of alias bindings produced during `PatternMatch` execution.
+///
+/// The value space is intentionally fixed to `u32` so the executor can carry
+/// lightweight graph-local identifiers while it is still in the step-expansion
+/// phase. Node aliases use the `EdgeFrame` local compact node index. When edge
+/// aliases start participating in execution, they will use edge row ids in the
+/// same `u32` slot space.
+///
+/// Alias collision rule:
+/// if an alias is encountered again with the same bound value, the binding row
+/// remains valid and execution continues. If the same alias is encountered with
+/// a different value, that row is rejected because the pattern would be asking
+/// one alias to represent two different graph elements at once.
+#[allow(dead_code)]
+type PatternBindingRow = HashMap<String, u32>;
+
+/// The full set of rows emitted by a `PatternMatch` executor pass.
+#[allow(dead_code)]
+type PatternBindings = Vec<PatternBindingRow>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PatternAliasKind {
+    Node,
+    Edge,
+}
+
+#[allow(dead_code)]
+fn bind_pattern_alias(row: &mut PatternBindingRow, alias: &str, value: u32) -> Result<()> {
+    match row.get(alias).copied() {
+        Some(bound) if bound == value => Ok(()),
+        Some(bound) => Err(GFError::InvalidConfig {
+            message: format!(
+                "pattern alias '{alias}' is already bound to {bound}, cannot rebind to {value}"
+            ),
+        }),
+        None => {
+            row.insert(alias.to_owned(), value);
+            Ok(())
+        }
+    }
 }
 
 pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Result<ExecutionValue> {
@@ -37,9 +80,9 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
             let nodes = match input {
                 ExecutionValue::Graph(graph) => graph.nodes().clone(),
                 ExecutionValue::Nodes(nodes) => nodes,
-                ExecutionValue::Edges(_) => {
+                ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
                     return Err(unsupported_plan(
-                        "FilterNodes cannot consume an edge domain",
+                        "FilterNodes cannot consume an edge or pattern-row domain",
                     ));
                 }
             };
@@ -51,8 +94,10 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
             let edges = match input {
                 ExecutionValue::Graph(graph) => graph.edges().clone(),
                 ExecutionValue::Edges(edges) => edges,
-                ExecutionValue::Nodes(_) => {
-                    return Err(unsupported_plan("FilterEdges cannot consume a node domain"));
+                ExecutionValue::Nodes(_) | ExecutionValue::PatternRows(_) => {
+                    return Err(unsupported_plan(
+                        "FilterEdges cannot consume a node or pattern-row domain",
+                    ));
                 }
             };
             let mask = evaluate_edge_predicate(&edges, predicate)?;
@@ -63,9 +108,9 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
             let nodes = match input {
                 ExecutionValue::Graph(graph) => graph.nodes().clone(),
                 ExecutionValue::Nodes(nodes) => nodes,
-                ExecutionValue::Edges(_) => {
+                ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
                     return Err(unsupported_plan(
-                        "ProjectNodes cannot consume an edge domain",
+                        "ProjectNodes cannot consume an edge or pattern-row domain",
                     ));
                 }
             };
@@ -77,9 +122,9 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
             let edges = match input {
                 ExecutionValue::Graph(graph) => graph.edges().clone(),
                 ExecutionValue::Edges(edges) => edges,
-                ExecutionValue::Nodes(_) => {
+                ExecutionValue::Nodes(_) | ExecutionValue::PatternRows(_) => {
                     return Err(unsupported_plan(
-                        "ProjectEdges cannot consume a node domain",
+                        "ProjectEdges cannot consume a node or pattern-row domain",
                     ));
                 }
             };
@@ -99,8 +144,8 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
                 ExecutionValue::Edges(edges) => {
                     Ok(ExecutionValue::Edges(sort_edges(&edges, by, *descending)?))
                 }
-                ExecutionValue::Graph(_) => Err(unsupported_plan(
-                    "Sort requires a node or edge domain, not a graph domain",
+                ExecutionValue::Graph(_) | ExecutionValue::PatternRows(_) => Err(unsupported_plan(
+                    "Sort requires a node or edge domain, not a graph or pattern-row domain",
                 )),
             }
         }
@@ -121,6 +166,9 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
                         .collect();
                     Ok(ExecutionValue::Graph(graph.subgraph(&node_ids)?))
                 }
+                ExecutionValue::PatternRows(_) => Err(unsupported_plan(
+                    "Limit does not yet support pattern-row domains",
+                )),
             }
         }
         LogicalPlan::Expand {
@@ -134,8 +182,10 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
             let frontier = match input {
                 ExecutionValue::Graph(graph) => graph.nodes().clone(),
                 ExecutionValue::Nodes(nodes) => nodes,
-                ExecutionValue::Edges(_) => {
-                    return Err(unsupported_plan("Expand cannot consume an edge domain"));
+                ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
+                    return Err(unsupported_plan(
+                        "Expand cannot consume an edge or pattern-row domain",
+                    ));
                 }
             };
             Ok(ExecutionValue::Graph(expand_graph(
@@ -153,8 +203,10 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
             let frontier = match input {
                 ExecutionValue::Graph(graph) => graph.nodes().clone(),
                 ExecutionValue::Nodes(nodes) => nodes,
-                ExecutionValue::Edges(_) => {
-                    return Err(unsupported_plan("Traverse cannot consume an edge domain"));
+                ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
+                    return Err(unsupported_plan(
+                        "Traverse cannot consume an edge or pattern-row domain",
+                    ));
                 }
             };
             Ok(ExecutionValue::Graph(traverse_graph(
@@ -164,9 +216,33 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
                 None,
             )?))
         }
-        LogicalPlan::PatternMatch { .. } => Err(unsupported_plan(
-            "PatternMatch executor is not implemented yet",
-        )),
+        LogicalPlan::PatternMatch {
+            input,
+            pattern,
+            where_,
+        } => {
+            let input = execute(input, source_graph.clone())?;
+            let anchors = match input {
+                ExecutionValue::Graph(graph) => graph.nodes().clone(),
+                ExecutionValue::Nodes(nodes) => nodes,
+                ExecutionValue::Edges(_) => {
+                    return Err(unsupported_plan(
+                        "PatternMatch cannot consume an edge domain",
+                    ));
+                }
+                ExecutionValue::PatternRows(_) => {
+                    return Err(unsupported_plan(
+                        "PatternMatch cannot consume an existing pattern-row domain",
+                    ));
+                }
+            };
+            Ok(ExecutionValue::PatternRows(execute_pattern_match(
+                source_graph.as_ref(),
+                &anchors,
+                pattern,
+                where_.as_ref(),
+            )?))
+        }
         LogicalPlan::AggregateNeighbors {
             input,
             edge_type,
@@ -176,9 +252,9 @@ pub(crate) fn execute(plan: &LogicalPlan, source_graph: Arc<GraphFrame>) -> Resu
             let anchors = match input {
                 ExecutionValue::Graph(graph) => graph.nodes().clone(),
                 ExecutionValue::Nodes(nodes) => nodes,
-                ExecutionValue::Edges(_) => {
+                ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
                     return Err(unsupported_plan(
-                        "AggregateNeighbors cannot consume an edge domain",
+                        "AggregateNeighbors cannot consume an edge or pattern-row domain",
                     ));
                 }
             };
@@ -280,9 +356,11 @@ fn execute_top_k(
                     let batch = top_k_batch(edges.to_record_batch(), by, *descending, n)?;
                     Ok(ExecutionValue::Edges(EdgeFrame::from_record_batch(batch)?))
                 }
-                ExecutionValue::Graph(_) => Err(unsupported_plan(
-                    "TopK Sort requires a node or edge domain, not a graph domain",
-                )),
+                ExecutionValue::Graph(_) | ExecutionValue::PatternRows(_) => Err(
+                    unsupported_plan(
+                        "TopK Sort requires a node or edge domain, not a graph or pattern-row domain",
+                    ),
+                ),
             }
         }
         // Hint not directly above a Sort — fall through.
@@ -295,9 +373,11 @@ fn extract_node_frontier(val: ExecutionValue, context: &str) -> Result<NodeFrame
     match val {
         ExecutionValue::Graph(graph) => Ok(graph.nodes().clone()),
         ExecutionValue::Nodes(nodes) => Ok(nodes),
-        ExecutionValue::Edges(_) => Err(unsupported_plan(&format!(
-            "{context} cannot consume an edge domain"
-        ))),
+        ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => Err(unsupported_plan(
+            &format!(
+                "{context} cannot consume an edge or pattern-row domain"
+            ),
+        )),
     }
 }
 
@@ -1215,6 +1295,21 @@ fn append_node_column(
 
 fn build_value_array(data_type: &DataType, values: Vec<Value>) -> Result<ArrayRef> {
     match data_type {
+        DataType::Int8 => {
+            let mut builder = Int8Builder::new();
+            for value in values {
+                match value {
+                    Value::Null => builder.append_null(),
+                    Value::Int(value) => builder.append_value(value as i8),
+                    other => {
+                        return Err(GFError::TypeMismatch {
+                            message: format!("expected Int8 aggregation result, got {other:?}"),
+                        });
+                    }
+                }
+            }
+            Ok(Arc::new(builder.finish()))
+        }
         DataType::Int64 => {
             let mut builder = Int64Builder::new();
             for value in values {
@@ -1621,6 +1716,9 @@ fn read_array_value(array: &dyn Array, row: usize, name: &str) -> Result<Value> 
     if let Some(array) = array.as_any().downcast_ref::<StringArray>() {
         return Ok(Value::String(array.value(row).to_owned()));
     }
+    if let Some(array) = array.as_any().downcast_ref::<Int8Array>() {
+        return Ok(Value::Int(array.value(row) as i64));
+    }
     if let Some(array) = array.as_any().downcast_ref::<Int64Array>() {
         return Ok(Value::Int(array.value(row)));
     }
@@ -1661,6 +1759,366 @@ fn matches_edge_type(edge_type: &str, spec: &EdgeTypeSpec) -> bool {
         EdgeTypeSpec::Multiple(values) => values.iter().any(|value| value == edge_type),
         EdgeTypeSpec::Any => true,
     }
+}
+
+/// Expands one typed pattern step over an existing binding table.
+///
+/// Each input row must already bind `step.from_alias` to an `EdgeFrame` local
+/// compact node index. The executor looks up matching edges from that node and
+/// emits zero or more output rows. `step.to_alias` is bound to the neighboring
+/// node index and `step.edge_alias`, when present, is bound to the traversed
+/// edge row id.
+///
+/// Alias collisions are handled row-locally: if rebinding an alias would
+/// assign a different value, that candidate row is dropped. This preserves the
+/// "same alias means same graph element" rule without aborting the whole
+/// pattern execution.
+#[allow(dead_code)]
+fn execute_pattern_step(
+    graph: &GraphFrame,
+    step: &PatternStep,
+    input: &PatternBindings,
+) -> Result<PatternBindings> {
+    let edges = graph.edges();
+    let mut output = Vec::new();
+
+    for row in input {
+        let from_idx = row
+            .get(&step.from_alias)
+            .copied()
+            .ok_or_else(|| GFError::InvalidConfig {
+                message: format!(
+                    "pattern step requires alias '{}' to be bound before execution",
+                    step.from_alias
+                ),
+            })?;
+
+        for (neighbor_idx, edge_row) in pattern_candidates(edges, from_idx, step) {
+            let mut next = row.clone();
+
+            if bind_pattern_alias(&mut next, &step.to_alias, neighbor_idx).is_err() {
+                continue;
+            }
+            if let Some(edge_alias) = step.edge_alias.as_deref() {
+                if bind_pattern_alias(&mut next, edge_alias, edge_row).is_err() {
+                    continue;
+                }
+            }
+
+            output.push(next);
+        }
+    }
+
+    Ok(output)
+}
+
+#[allow(dead_code)]
+fn execute_pattern_steps(
+    graph: &GraphFrame,
+    steps: &[PatternStep],
+    seed_bindings: &PatternBindings,
+) -> Result<PatternBindings> {
+    let mut current = seed_bindings.clone();
+
+    for step in steps {
+        if current.is_empty() {
+            break;
+        }
+        current = execute_pattern_step(graph, step, &current)?;
+    }
+
+    Ok(current)
+}
+
+#[allow(dead_code)]
+fn apply_pattern_where(
+    graph: &GraphFrame,
+    bindings: &PatternBindings,
+    where_: Option<&Expr>,
+) -> Result<PatternBindings> {
+    let Some(where_) = where_ else {
+        return Ok(bindings.clone());
+    };
+
+    let mut filtered = Vec::with_capacity(bindings.len());
+    for row in bindings {
+        match evaluate_pattern_expr(graph, row, where_)? {
+            Value::Bool(true) => filtered.push(row.clone()),
+            Value::Bool(false) => {}
+            other => {
+                return Err(GFError::TypeMismatch {
+                    message: format!("pattern where predicate must evaluate to bool, got {other:?}"),
+                });
+            }
+        }
+    }
+
+    Ok(filtered)
+}
+
+#[allow(dead_code)]
+fn evaluate_pattern_expr(
+    graph: &GraphFrame,
+    binding: &PatternBindingRow,
+    expr: &Expr,
+) -> Result<Value> {
+    match expr {
+        Expr::Col { name } => Err(GFError::UnsupportedOperation {
+            message: format!("plain column reference '{name}' is not supported in PatternMatch where clauses"),
+        }),
+        Expr::Literal { value } => Ok(convert_scalar(value)),
+        Expr::BinaryOp { left, op, right } => evaluate_binary_values(
+            evaluate_pattern_expr(graph, binding, left)?,
+            op,
+            evaluate_pattern_expr(graph, binding, right)?,
+        ),
+        Expr::UnaryOp { op, expr } => {
+            let value = evaluate_pattern_expr(graph, binding, expr)?;
+            match (op, value) {
+                (UnaryOp::Neg, Value::Int(value)) => Ok(Value::Int(-value)),
+                (UnaryOp::Neg, Value::Float(value)) => Ok(Value::Float(-value)),
+                (_, other) => Err(GFError::TypeMismatch {
+                    message: format!("unsupported unary expression operand: {other:?}"),
+                }),
+            }
+        }
+        Expr::ListContains { expr, item } => {
+            let list = evaluate_pattern_expr(graph, binding, expr)?;
+            let item = evaluate_pattern_expr(graph, binding, item)?;
+            match list {
+                Value::List(values) => Ok(Value::Bool(values.iter().any(|value| value == &item))),
+                other => Err(GFError::TypeMismatch {
+                    message: format!("ListContains expects a list operand, got {other:?}"),
+                }),
+            }
+        }
+        Expr::Cast { expr, dtype } => cast_value(evaluate_pattern_expr(graph, binding, expr)?, dtype),
+        Expr::And { left, right } => {
+            let left = evaluate_pattern_expr(graph, binding, left)?;
+            let right = evaluate_pattern_expr(graph, binding, right)?;
+            match (left, right) {
+                (Value::Bool(left), Value::Bool(right)) => Ok(Value::Bool(left && right)),
+                (left, right) => Err(GFError::TypeMismatch {
+                    message: format!("boolean op expects bool operands, got {left:?} and {right:?}"),
+                }),
+            }
+        }
+        Expr::Or { left, right } => {
+            let left = evaluate_pattern_expr(graph, binding, left)?;
+            let right = evaluate_pattern_expr(graph, binding, right)?;
+            match (left, right) {
+                (Value::Bool(left), Value::Bool(right)) => Ok(Value::Bool(left || right)),
+                (left, right) => Err(GFError::TypeMismatch {
+                    message: format!("boolean op expects bool operands, got {left:?} and {right:?}"),
+                }),
+            }
+        }
+        Expr::Not { expr } => match evaluate_pattern_expr(graph, binding, expr)? {
+            Value::Bool(value) => Ok(Value::Bool(!value)),
+            other => Err(GFError::TypeMismatch {
+                message: format!("Not expects bool, got {other:?}"),
+            }),
+        },
+        Expr::PatternCol { alias, field } => read_pattern_field_value(graph, binding, alias, field),
+        Expr::StringOp { op, expr, pattern } => {
+            let subject = evaluate_pattern_expr(graph, binding, expr)?;
+            let pat = evaluate_pattern_expr(graph, binding, pattern)?;
+            match (subject, pat) {
+                (Value::String(s), Value::String(p)) => Ok(Value::Bool(match op {
+                    StringOp::Contains => s.contains(p.as_str()),
+                    StringOp::StartsWith => s.starts_with(p.as_str()),
+                    StringOp::EndsWith => s.ends_with(p.as_str()),
+                })),
+                (s, p) => Err(GFError::TypeMismatch {
+                    message: format!("StringOp expects string operands, got {s:?} and {p:?}"),
+                }),
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn read_pattern_field_value(
+    graph: &GraphFrame,
+    binding: &PatternBindingRow,
+    alias: &str,
+    field: &str,
+) -> Result<Value> {
+    let bound = binding
+        .get(alias)
+        .copied()
+        .ok_or_else(|| GFError::InvalidConfig {
+            message: format!("pattern predicate requires alias '{alias}' to be bound"),
+        })?;
+
+    let node_has_field = graph.nodes().schema().field_with_name(field).is_ok();
+    let edge_has_field = graph.edges().schema().field_with_name(field).is_ok();
+
+    match (node_has_field, edge_has_field) {
+        (true, false) => {
+            let edge_node_ids = build_edge_node_ids(graph.edges())?;
+            let node_id = edge_node_ids
+                .get(bound as usize)
+                .map(String::as_str)
+                .ok_or_else(|| GFError::InvalidConfig {
+                    message: format!(
+                        "pattern alias '{alias}' is not a valid edge-local node index: {bound}"
+                    ),
+                })?;
+            let node_row = graph.nodes().row_index(node_id).ok_or_else(|| GFError::NodeNotFound {
+                id: node_id.to_owned(),
+            })?;
+            read_column_value(graph.nodes().to_record_batch(), node_row as usize, field)
+        }
+        (false, true) => {
+            if bound as usize >= graph.edges().len() {
+                return Err(GFError::InvalidConfig {
+                    message: format!(
+                        "pattern alias '{alias}' is not a valid edge row index: {bound}"
+                    ),
+                });
+            }
+            read_column_value(graph.edges().to_record_batch(), bound as usize, field)
+        }
+        (true, true) => Err(GFError::InvalidConfig {
+            message: format!(
+                "pattern field reference '{alias}.{field}' is ambiguous because '{field}' exists on both nodes and edges"
+            ),
+        }),
+        (false, false) => Err(GFError::ColumnNotFound {
+            column: field.to_owned(),
+        }),
+    }
+}
+
+#[allow(dead_code)]
+fn collect_pattern_aliases(pattern: &[PatternStep]) -> Result<Vec<(String, PatternAliasKind)>> {
+    let mut aliases = Vec::new();
+    let mut kinds = HashMap::<String, PatternAliasKind>::new();
+
+    let mut register = |alias: &str, kind: PatternAliasKind| -> Result<()> {
+        match kinds.get(alias).copied() {
+            Some(existing) if existing == kind => Ok(()),
+            Some(existing) => Err(GFError::InvalidConfig {
+                message: format!(
+                    "pattern alias '{alias}' is used as both {:?} and {:?}",
+                    existing, kind
+                ),
+            }),
+            None => {
+                kinds.insert(alias.to_owned(), kind);
+                aliases.push((alias.to_owned(), kind));
+                Ok(())
+            }
+        }
+    };
+
+    for step in pattern {
+        register(&step.from_alias, PatternAliasKind::Node)?;
+        if let Some(edge_alias) = step.edge_alias.as_deref() {
+            register(edge_alias, PatternAliasKind::Edge)?;
+        }
+        register(&step.to_alias, PatternAliasKind::Node)?;
+    }
+
+    Ok(aliases)
+}
+
+#[allow(dead_code)]
+fn materialize_pattern_bindings(
+    graph: &GraphFrame,
+    pattern: &[PatternStep],
+    bindings: &PatternBindings,
+) -> Result<RecordBatch> {
+    let aliases = collect_pattern_aliases(pattern)?;
+    let mut fields = Vec::new();
+    let mut columns = Vec::new();
+
+    for (alias, kind) in aliases {
+        let schema = match kind {
+            PatternAliasKind::Node => graph.nodes().schema(),
+            PatternAliasKind::Edge => graph.edges().schema(),
+        };
+
+        for field in schema.fields() {
+            let field = field.as_ref();
+            let qualified_name = format!("{alias}.{}", field.name());
+            let values = bindings
+                .iter()
+                .map(|row| read_pattern_field_value(graph, row, &alias, field.name()))
+                .collect::<Result<Vec<_>>>()?;
+            fields.push(Field::new(
+                &qualified_name,
+                field.data_type().clone(),
+                field.is_nullable(),
+            ));
+            columns.push(build_value_array(field.data_type(), values)?);
+        }
+    }
+
+    RecordBatch::try_new(Arc::new(ArrowSchema::new(fields)), columns)
+        .map_err(|error| GFError::IoError(std::io::Error::other(error)))
+}
+
+#[allow(dead_code)]
+fn execute_pattern_match(
+    graph: &GraphFrame,
+    anchors: &NodeFrame,
+    pattern: &Pattern,
+    where_: Option<&Expr>,
+) -> Result<RecordBatch> {
+    if pattern.is_empty() {
+        return Err(GFError::InvalidConfig {
+            message: "PatternMatch requires at least one step".to_owned(),
+        });
+    }
+
+    let first_step = &pattern.steps[0];
+    let mut seed_bindings = PatternBindings::new();
+    for anchor_id in anchors.id_column().iter().flatten() {
+        let Some(edge_local_idx) = graph.edges().node_row_idx(anchor_id) else {
+            continue;
+        };
+
+        let mut row = PatternBindingRow::new();
+        bind_pattern_alias(&mut row, &first_step.from_alias, edge_local_idx)?;
+        seed_bindings.push(row);
+    }
+
+    let bindings = execute_pattern_steps(graph, &pattern.steps, &seed_bindings)?;
+    let filtered = apply_pattern_where(graph, &bindings, where_)?;
+    materialize_pattern_bindings(graph, &pattern.steps, &filtered)
+}
+
+#[allow(dead_code)]
+fn pattern_candidates(edges: &EdgeFrame, from_idx: u32, step: &PatternStep) -> Vec<(u32, u32)> {
+    let mut candidates = Vec::new();
+
+    if matches!(step.direction, Direction::Out | Direction::Both) {
+        for (&dst_idx, &edge_row) in edges
+            .out_neighbors(from_idx)
+            .iter()
+            .zip(edges.out_edge_ids(from_idx).iter())
+        {
+            if matches_edge_type(edges.edge_type_at(edge_row), &step.edge_type) {
+                candidates.push((dst_idx, edge_row));
+            }
+        }
+    }
+
+    if matches!(step.direction, Direction::In | Direction::Both) {
+        for (&src_idx, &edge_row) in edges
+            .in_neighbors(from_idx)
+            .iter()
+            .zip(edges.in_edge_ids(from_idx).iter())
+        {
+            if matches_edge_type(edges.edge_type_at(edge_row), &step.edge_type) {
+                candidates.push((src_idx, edge_row));
+            }
+        }
+    }
+
+    candidates
 }
 
 fn sort_nodes(nodes: &NodeFrame, by: &str, descending: bool) -> Result<NodeFrame> {
@@ -1756,7 +2214,8 @@ mod tests {
     };
     use arrow_schema::{DataType, Field, Schema as ArrowSchema};
     use lynxes_core::{
-        Direction, EdgeTypeSpec, PatternStep, COL_EDGE_SRC, COL_NODE_ID, COL_NODE_LABEL,
+        Direction, EdgeTypeSpec, Optimizer, OptimizerOptions, Pattern, PatternStep, COL_EDGE_SRC,
+        COL_NODE_ID, COL_NODE_LABEL,
     };
     use lynxes_plan::{Connector, PartitionStrategy};
 
@@ -2535,5 +2994,707 @@ mod tests {
             !s.contains(&"acme"),
             "acme must not appear (no KNOWS edge from alice's neighbourhood)"
         );
+    }
+
+    #[test]
+    fn pattern_binding_row_accepts_fresh_aliases() {
+        let mut row = PatternBindingRow::new();
+
+        bind_pattern_alias(&mut row, "a", 0).unwrap();
+        bind_pattern_alias(&mut row, "b", 3).unwrap();
+
+        assert_eq!(row.get("a"), Some(&0));
+        assert_eq!(row.get("b"), Some(&3));
+    }
+
+    #[test]
+    fn pattern_binding_row_allows_same_alias_same_value() {
+        let mut row = PatternBindingRow::new();
+
+        bind_pattern_alias(&mut row, "a", 2).unwrap();
+        bind_pattern_alias(&mut row, "a", 2).unwrap();
+
+        assert_eq!(row.len(), 1);
+        assert_eq!(row.get("a"), Some(&2));
+    }
+
+    #[test]
+    fn pattern_binding_row_rejects_conflicting_alias_rebind() {
+        let mut row = PatternBindingRow::new();
+        bind_pattern_alias(&mut row, "a", 1).unwrap();
+
+        let err = bind_pattern_alias(&mut row, "a", 4).unwrap_err();
+
+        assert!(
+            matches!(err, GFError::InvalidConfig { message } if message.contains("pattern alias 'a'"))
+        );
+        assert_eq!(row.get("a"), Some(&1));
+    }
+
+    #[test]
+    fn pattern_bindings_is_vector_of_binding_rows() {
+        let mut bindings: PatternBindings = Vec::new();
+        let mut row = PatternBindingRow::new();
+        bind_pattern_alias(&mut row, "seed", 7).unwrap();
+        bindings.push(row);
+
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].get("seed"), Some(&7));
+    }
+
+    #[test]
+    fn execute_pattern_step_builds_outbound_typed_bindings() {
+        let graph = demo_graph();
+        let step = PatternStep {
+            from_alias: "a".to_owned(),
+            edge_alias: Some("e".to_owned()),
+            edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+            direction: Direction::Out,
+            to_alias: "b".to_owned(),
+        };
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_step(&graph, &step, &vec![seed]).unwrap();
+
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings[0].get("a"), Some(&0));
+        assert_eq!(bindings[0].get("e"), Some(&0));
+        assert_eq!(bindings[0].get("b"), Some(&1));
+        assert_eq!(bindings[1].get("a"), Some(&0));
+        assert_eq!(bindings[1].get("e"), Some(&1));
+        assert_eq!(bindings[1].get("b"), Some(&2));
+    }
+
+    #[test]
+    fn execute_pattern_step_supports_inbound_typed_bindings() {
+        let graph = demo_graph();
+        let step = PatternStep {
+            from_alias: "c".to_owned(),
+            edge_alias: Some("e".to_owned()),
+            edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+            direction: Direction::In,
+            to_alias: "a".to_owned(),
+        };
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "c", 2).unwrap();
+        let bindings = execute_pattern_step(&graph, &step, &vec![seed]).unwrap();
+
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].get("c"), Some(&2));
+        assert_eq!(bindings[0].get("e"), Some(&1));
+        assert_eq!(bindings[0].get("a"), Some(&0));
+    }
+
+    #[test]
+    fn execute_pattern_step_drops_rows_on_alias_conflict() {
+        let graph = demo_graph();
+        let step = PatternStep {
+            from_alias: "a".to_owned(),
+            edge_alias: None,
+            edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+            direction: Direction::Out,
+            to_alias: "b".to_owned(),
+        };
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        bind_pattern_alias(&mut seed, "b", 9).unwrap();
+        let bindings = execute_pattern_step(&graph, &step, &vec![seed]).unwrap();
+
+        assert!(bindings.is_empty());
+    }
+
+    #[test]
+    fn execute_pattern_steps_chains_two_hops_across_aliases() {
+        let graph = demo_graph();
+        let steps = vec![
+            PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: Some("e1".to_owned()),
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            },
+            PatternStep {
+                from_alias: "b".to_owned(),
+                edge_alias: Some("e2".to_owned()),
+                edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                direction: Direction::Out,
+                to_alias: "c".to_owned(),
+            },
+        ];
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].get("a"), Some(&0));
+        assert_eq!(bindings[0].get("b"), Some(&1));
+        assert_eq!(bindings[0].get("c"), Some(&3));
+        assert_eq!(bindings[0].get("e1"), Some(&0));
+        assert_eq!(bindings[0].get("e2"), Some(&2));
+    }
+
+    #[test]
+    fn execute_pattern_steps_returns_empty_when_later_hop_has_no_match() {
+        let graph = demo_graph();
+        let steps = vec![
+            PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: None,
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            },
+            PatternStep {
+                from_alias: "b".to_owned(),
+                edge_alias: None,
+                edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                direction: Direction::Out,
+                to_alias: "c".to_owned(),
+            },
+            PatternStep {
+                from_alias: "c".to_owned(),
+                edge_alias: None,
+                edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                direction: Direction::Out,
+                to_alias: "d".to_owned(),
+            },
+        ];
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+
+        assert!(bindings.is_empty());
+    }
+
+    #[test]
+    fn execute_pattern_steps_preserves_aliases_from_previous_hops() {
+        let graph = demo_graph();
+        let steps = vec![
+            PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: None,
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            },
+            PatternStep {
+                from_alias: "b".to_owned(),
+                edge_alias: None,
+                edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                direction: Direction::Out,
+                to_alias: "c".to_owned(),
+            },
+        ];
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "seed", 42).unwrap();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].get("seed"), Some(&42));
+        assert_eq!(bindings[0].get("a"), Some(&0));
+        assert_eq!(bindings[0].get("b"), Some(&1));
+        assert_eq!(bindings[0].get("c"), Some(&3));
+    }
+
+    #[test]
+    fn apply_pattern_where_filters_bindings_by_node_alias_field() {
+        let graph = demo_graph();
+        let steps = vec![PatternStep {
+            from_alias: "a".to_owned(),
+            edge_alias: None,
+            edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+            direction: Direction::Out,
+            to_alias: "b".to_owned(),
+        }];
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+        let predicate = Expr::BinaryOp {
+            left: Box::new(Expr::PatternCol {
+                alias: "b".to_owned(),
+                field: "age".to_owned(),
+            }),
+            op: BinaryOp::Gt,
+            right: Box::new(Expr::Literal {
+                value: ScalarValue::Int(30),
+            }),
+        };
+
+        let filtered = apply_pattern_where(&graph, &bindings, Some(&predicate)).unwrap();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].get("a"), Some(&0));
+        assert_eq!(filtered[0].get("b"), Some(&1));
+    }
+
+    #[test]
+    fn apply_pattern_where_filters_bindings_by_edge_alias_field() {
+        let graph = demo_graph();
+        let steps = vec![
+            PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: Some("e1".to_owned()),
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            },
+            PatternStep {
+                from_alias: "b".to_owned(),
+                edge_alias: Some("e2".to_owned()),
+                edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                direction: Direction::Out,
+                to_alias: "c".to_owned(),
+            },
+        ];
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+        let predicate = Expr::BinaryOp {
+            left: Box::new(Expr::PatternCol {
+                alias: "e2".to_owned(),
+                field: COL_EDGE_TYPE.to_owned(),
+            }),
+            op: BinaryOp::Eq,
+            right: Box::new(Expr::Literal {
+                value: ScalarValue::String("WORKS_AT".to_owned()),
+            }),
+        };
+
+        let filtered = apply_pattern_where(&graph, &bindings, Some(&predicate)).unwrap();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].get("e2"), Some(&2));
+        assert_eq!(filtered[0].get("c"), Some(&3));
+    }
+
+    #[test]
+    fn apply_pattern_where_returns_all_bindings_when_predicate_is_none() {
+        let graph = demo_graph();
+        let steps = vec![PatternStep {
+            from_alias: "a".to_owned(),
+            edge_alias: None,
+            edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+            direction: Direction::Out,
+            to_alias: "b".to_owned(),
+        }];
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_steps(&graph, &steps, &vec![seed]).unwrap();
+
+        let filtered = apply_pattern_where(&graph, &bindings, None).unwrap();
+
+        assert_eq!(filtered, bindings);
+    }
+
+    #[test]
+    fn materialize_pattern_bindings_emits_alias_prefixed_columns_in_pattern_order() {
+        let graph = demo_graph();
+        let pattern = vec![
+            PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: Some("e1".to_owned()),
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            },
+            PatternStep {
+                from_alias: "b".to_owned(),
+                edge_alias: Some("e2".to_owned()),
+                edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                direction: Direction::Out,
+                to_alias: "c".to_owned(),
+            },
+        ];
+
+        let mut seed = PatternBindingRow::new();
+        bind_pattern_alias(&mut seed, "a", 0).unwrap();
+        let bindings = execute_pattern_steps(&graph, &pattern, &vec![seed]).unwrap();
+        let batch = materialize_pattern_bindings(&graph, &pattern, &bindings).unwrap();
+
+        let schema = batch.schema();
+        let column_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
+        assert_eq!(
+            column_names,
+            vec![
+                "a._id",
+                "a._label",
+                "a.age",
+                "e1._src",
+                "e1._dst",
+                "e1._type",
+                "e1._direction",
+                "e1.weight",
+                "b._id",
+                "b._label",
+                "b.age",
+                "e2._src",
+                "e2._dst",
+                "e2._type",
+                "e2._direction",
+                "e2.weight",
+                "c._id",
+                "c._label",
+                "c.age",
+            ]
+        );
+        assert_eq!(batch.num_rows(), 1);
+
+        let a_id = batch
+            .column_by_name("a._id")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let b_id = batch
+            .column_by_name("b._id")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let c_id = batch
+            .column_by_name("c._id")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let e1_type = batch
+            .column_by_name("e1._type")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let e2_weight = batch
+            .column_by_name("e2.weight")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+
+        assert_eq!(a_id.value(0), "alice");
+        assert_eq!(b_id.value(0), "bob");
+        assert_eq!(c_id.value(0), "acme");
+        assert_eq!(e1_type.value(0), "KNOWS");
+        assert_eq!(e2_weight.value(0), 3);
+    }
+
+    #[test]
+    fn materialize_pattern_bindings_supports_empty_result_with_full_schema() {
+        let graph = demo_graph();
+        let pattern = vec![
+            PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: Some("e1".to_owned()),
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            },
+            PatternStep {
+                from_alias: "b".to_owned(),
+                edge_alias: Some("e2".to_owned()),
+                edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                direction: Direction::Out,
+                to_alias: "c".to_owned(),
+            },
+        ];
+
+        let empty: PatternBindings = Vec::new();
+        let batch = materialize_pattern_bindings(&graph, &pattern, &empty).unwrap();
+
+        assert_eq!(batch.num_rows(), 0);
+        assert_eq!(batch.num_columns(), 19);
+        assert_eq!(batch.schema().field(0).name(), "a._id");
+        assert_eq!(batch.schema().field(18).name(), "c.age");
+    }
+
+    #[test]
+    fn materialize_pattern_bindings_rejects_alias_kind_conflicts() {
+        let graph = demo_graph();
+        let pattern = vec![PatternStep {
+            from_alias: "x".to_owned(),
+            edge_alias: Some("x".to_owned()),
+            edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+            direction: Direction::Out,
+            to_alias: "b".to_owned(),
+        }];
+
+        let empty: PatternBindings = Vec::new();
+        let err = materialize_pattern_bindings(&graph, &pattern, &empty).unwrap_err();
+
+        assert!(matches!(err, GFError::InvalidConfig { message } if message.contains("used as both")));
+    }
+
+    #[test]
+    fn pattern_match_executes_collect_path_for_two_hop_pattern() {
+        let graph = Arc::new(demo_graph());
+        let plan = LogicalPlan::PatternMatch {
+            input: Box::new(LogicalPlan::FilterNodes {
+                input: Box::new(scan(graph.clone())),
+                predicate: Expr::BinaryOp {
+                    left: Box::new(Expr::Col {
+                        name: COL_NODE_ID.to_owned(),
+                    }),
+                    op: BinaryOp::Eq,
+                    right: Box::new(Expr::Literal {
+                        value: ScalarValue::String("alice".to_owned()),
+                    }),
+                },
+            }),
+            pattern: Pattern::new(vec![
+                PatternStep {
+                    from_alias: "a".to_owned(),
+                    edge_alias: Some("e1".to_owned()),
+                    edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                    direction: Direction::Out,
+                    to_alias: "b".to_owned(),
+                },
+                PatternStep {
+                    from_alias: "b".to_owned(),
+                    edge_alias: Some("e2".to_owned()),
+                    edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                    direction: Direction::Out,
+                    to_alias: "c".to_owned(),
+                },
+            ]),
+            where_: None,
+        };
+
+        let result = execute(&plan, graph).unwrap();
+        let ExecutionValue::PatternRows(batch) = result else {
+            panic!("expected pattern-row result");
+        };
+
+        assert_eq!(batch.num_rows(), 1);
+        let schema = batch.schema();
+        assert!(schema.column_with_name("a._id").is_some());
+        assert!(schema.column_with_name("b._id").is_some());
+        assert!(schema.column_with_name("c._id").is_some());
+        assert!(schema.column_with_name("e1._type").is_some());
+        assert!(schema.column_with_name("e2.weight").is_some());
+
+        let a_ids = string_array(&batch, "a._id").unwrap();
+        let b_ids = string_array(&batch, "b._id").unwrap();
+        let c_ids = string_array(&batch, "c._id").unwrap();
+        let e1_types = string_array(&batch, "e1._type").unwrap();
+        let e2_weight = batch
+            .column_by_name("e2.weight")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+
+        assert_eq!(a_ids.value(0), "alice");
+        assert_eq!(b_ids.value(0), "bob");
+        assert_eq!(c_ids.value(0), "acme");
+        assert_eq!(e1_types.value(0), "KNOWS");
+        assert_eq!(e2_weight.value(0), 3);
+    }
+
+    #[test]
+    fn pattern_match_executes_with_where_filter() {
+        let graph = Arc::new(demo_graph());
+        let plan = LogicalPlan::PatternMatch {
+            input: Box::new(LogicalPlan::FilterNodes {
+                input: Box::new(scan(graph.clone())),
+                predicate: Expr::BinaryOp {
+                    left: Box::new(Expr::Col {
+                        name: COL_NODE_ID.to_owned(),
+                    }),
+                    op: BinaryOp::Eq,
+                    right: Box::new(Expr::Literal {
+                        value: ScalarValue::String("alice".to_owned()),
+                    }),
+                },
+            }),
+            pattern: Pattern::new(vec![PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: Some("e".to_owned()),
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            }]),
+            where_: Some(Expr::BinaryOp {
+                left: Box::new(Expr::PatternCol {
+                    alias: "b".to_owned(),
+                    field: "age".to_owned(),
+                }),
+                op: BinaryOp::Gt,
+                right: Box::new(Expr::Literal {
+                    value: ScalarValue::Int(30),
+                }),
+            }),
+        };
+
+        let result = execute(&plan, graph).unwrap();
+        let ExecutionValue::PatternRows(batch) = result else {
+            panic!("expected pattern-row result");
+        };
+
+        assert_eq!(batch.num_rows(), 1);
+        let b_ids = string_array(&batch, "b._id").unwrap();
+        assert_eq!(b_ids.value(0), "bob");
+    }
+
+    #[test]
+    fn kg_typed_one_step_pattern_executes() {
+        let graph = Arc::new(demo_graph());
+        let plan = LogicalPlan::PatternMatch {
+            input: Box::new(LogicalPlan::FilterNodes {
+                input: Box::new(scan(graph.clone())),
+                predicate: Expr::BinaryOp {
+                    left: Box::new(Expr::Col {
+                        name: COL_NODE_ID.to_owned(),
+                    }),
+                    op: BinaryOp::Eq,
+                    right: Box::new(Expr::Literal {
+                        value: ScalarValue::String("alice".to_owned()),
+                    }),
+                },
+            }),
+            pattern: Pattern::new(vec![PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: Some("e".to_owned()),
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            }]),
+            where_: None,
+        };
+
+        let result = execute(&plan, graph).unwrap();
+        let ExecutionValue::PatternRows(batch) = result else {
+            panic!("expected pattern-row result");
+        };
+
+        assert_eq!(batch.num_rows(), 2);
+        let a_ids = string_array(&batch, "a._id").unwrap();
+        let b_ids = string_array(&batch, "b._id").unwrap();
+        let e_types = string_array(&batch, "e._type").unwrap();
+        assert_eq!(a_ids.value(0), "alice");
+        assert_eq!(a_ids.value(1), "alice");
+        assert_eq!(b_ids.value(0), "bob");
+        assert_eq!(b_ids.value(1), "charlie");
+        assert_eq!(e_types.value(0), "KNOWS");
+        assert_eq!(e_types.value(1), "KNOWS");
+    }
+
+    #[test]
+    fn kg_two_hop_multi_step_pattern_executes() {
+        let graph = Arc::new(demo_graph());
+        let plan = LogicalPlan::PatternMatch {
+            input: Box::new(LogicalPlan::FilterNodes {
+                input: Box::new(scan(graph.clone())),
+                predicate: Expr::BinaryOp {
+                    left: Box::new(Expr::Col {
+                        name: COL_NODE_ID.to_owned(),
+                    }),
+                    op: BinaryOp::Eq,
+                    right: Box::new(Expr::Literal {
+                        value: ScalarValue::String("alice".to_owned()),
+                    }),
+                },
+            }),
+            pattern: Pattern::new(vec![
+                PatternStep {
+                    from_alias: "a".to_owned(),
+                    edge_alias: Some("e1".to_owned()),
+                    edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                    direction: Direction::Out,
+                    to_alias: "b".to_owned(),
+                },
+                PatternStep {
+                    from_alias: "b".to_owned(),
+                    edge_alias: Some("e2".to_owned()),
+                    edge_type: EdgeTypeSpec::Single("WORKS_AT".to_owned()),
+                    direction: Direction::Out,
+                    to_alias: "c".to_owned(),
+                },
+            ]),
+            where_: None,
+        };
+
+        let result = execute(&plan, graph).unwrap();
+        let ExecutionValue::PatternRows(batch) = result else {
+            panic!("expected pattern-row result");
+        };
+
+        assert_eq!(batch.num_rows(), 1);
+        assert_eq!(string_array(&batch, "a._id").unwrap().value(0), "alice");
+        assert_eq!(string_array(&batch, "b._id").unwrap().value(0), "bob");
+        assert_eq!(string_array(&batch, "c._id").unwrap().value(0), "acme");
+    }
+
+    #[test]
+    fn kg_pattern_expansion_pushdown_preserves_result_set() {
+        let graph = Arc::new(demo_graph());
+        let plan = LogicalPlan::PatternMatch {
+            input: Box::new(scan(graph.clone())),
+            pattern: Pattern::new(vec![PatternStep {
+                from_alias: "a".to_owned(),
+                edge_alias: Some("e".to_owned()),
+                edge_type: EdgeTypeSpec::Single("KNOWS".to_owned()),
+                direction: Direction::Out,
+                to_alias: "b".to_owned(),
+            }]),
+            where_: Some(Expr::And {
+                left: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::PatternCol {
+                        alias: "a".to_owned(),
+                        field: "age".to_owned(),
+                    }),
+                    op: BinaryOp::Gt,
+                    right: Box::new(Expr::Literal {
+                        value: ScalarValue::Int(25),
+                    }),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                    left: Box::new(Expr::PatternCol {
+                        alias: "b".to_owned(),
+                        field: "age".to_owned(),
+                    }),
+                    op: BinaryOp::Gt,
+                    right: Box::new(Expr::Literal {
+                        value: ScalarValue::Int(30),
+                    }),
+                }),
+            }),
+        };
+
+        let baseline_plan = Optimizer::new(OptimizerOptions {
+            pattern_expansion: false,
+            ..OptimizerOptions::default()
+        })
+        .run(plan.clone());
+        let optimized_plan = Optimizer::default().run(plan);
+
+        let baseline = execute(&baseline_plan, graph.clone()).unwrap();
+        let optimized = execute(&optimized_plan, graph).unwrap();
+
+        let ExecutionValue::PatternRows(baseline_batch) = baseline else {
+            panic!("expected pattern-row result");
+        };
+        let ExecutionValue::PatternRows(optimized_batch) = optimized else {
+            panic!("expected pattern-row result");
+        };
+
+        assert_eq!(baseline_batch.schema(), optimized_batch.schema());
+        assert_eq!(baseline_batch.num_rows(), optimized_batch.num_rows());
+        assert_eq!(baseline_batch.num_columns(), optimized_batch.num_columns());
+        for idx in 0..baseline_batch.num_columns() {
+            assert_eq!(
+                format!("{:?}", baseline_batch.column(idx)),
+                format!("{:?}", optimized_batch.column(idx))
+            );
+        }
     }
 }

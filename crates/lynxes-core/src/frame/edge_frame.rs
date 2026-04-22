@@ -38,7 +38,7 @@ pub struct EdgeFrame {
 
     /// Outgoing adjacency index: source local-node-idx ??destination local-node-idx + edge row.
     /// Built immediately during `from_record_batch`.
-    out_csr: CsrIndex,
+    out_csr: Arc<CsrIndex>,
 
     /// Incoming adjacency index: destination local-node-idx ??source local-node-idx + edge row.
     /// Built lazily on the first call to `in_neighbors` (FRM-009).
@@ -59,7 +59,7 @@ impl Clone for EdgeFrame {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
-            out_csr: self.out_csr.clone(),
+            out_csr: Arc::clone(&self.out_csr),
             in_csr: OnceLock::new(),
             type_index: self.type_index.clone(),
             node_index: self.node_index.clone(),
@@ -78,7 +78,7 @@ impl EdgeFrame {
     pub fn empty(schema: &ArrowSchema) -> Self {
         Self {
             data: RecordBatch::new_empty(Arc::new(schema.clone())),
-            out_csr: CsrIndex::build(&[], &[], 0),
+            out_csr: Arc::new(CsrIndex::build(&[], &[], 0)),
             in_csr: OnceLock::new(),
             type_index: HashMap::new(),
             node_index: HashMap::new(),
@@ -179,6 +179,22 @@ impl EdgeFrame {
     /// Out-degree of `node_idx`.  Returns 0 for out-of-bounds indices.
     pub fn out_degree(&self, node_idx: u32) -> usize {
         self.out_csr.degree(node_idx)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn out_csr_arc(&self) -> Arc<CsrIndex> {
+        Arc::clone(&self.out_csr)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn with_out_csr(&self, out_csr: Arc<CsrIndex>) -> Self {
+        Self {
+            data: self.data.clone(),
+            out_csr,
+            in_csr: OnceLock::new(),
+            type_index: self.type_index.clone(),
+            node_index: self.node_index.clone(),
+        }
     }
 
     /// Returns source local-node-indices for all edges entering `node_idx`.
@@ -351,7 +367,7 @@ impl EdgeFrame {
         // Row set is unchanged ??clone indexes directly.
         Ok(Self {
             data: new_batch,
-            out_csr: self.out_csr.clone(),
+            out_csr: Arc::clone(&self.out_csr),
             in_csr: OnceLock::new(), // OnceLock is not Clone; let in_csr reinitialize on demand
             type_index: self.type_index.clone(),
             node_index: self.node_index.clone(),
@@ -384,7 +400,7 @@ impl EdgeFrame {
         if frames.len() == 1 {
             return Ok(Self {
                 data: frames[0].data.clone(),
-                out_csr: frames[0].out_csr.clone(),
+                out_csr: Arc::clone(&frames[0].out_csr),
                 in_csr: OnceLock::new(),
                 type_index: frames[0].type_index.clone(),
                 node_index: frames[0].node_index.clone(),
@@ -450,7 +466,7 @@ impl EdgeFrame {
             dst_rows.push(dst_idx);
         }
 
-        let out_csr = CsrIndex::build(&src_rows, &dst_rows, node_index.len());
+        let out_csr = Arc::new(CsrIndex::build(&src_rows, &dst_rows, node_index.len()));
 
         let type_col = data
             .column_by_name(COL_EDGE_TYPE)

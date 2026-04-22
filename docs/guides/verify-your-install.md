@@ -11,32 +11,30 @@ This page assumes that you have already installed the Python package and can ope
 
 If you have not installed Lynxes yet, go back to `docs/install.md` first. Then return here and run the code below exactly as written.
 
-## Build A Tiny Graph In Memory
+## Build A Tiny Graph In One Call
+
+If the question is "can Lynxes itself construct a graph object from Python data?", then the right path is not `read_gf()`. Loading a `.gf` file is a Lynxes input path, but it is still loading, not creating.
+
+The shortest constructor path in Python is `lx.graph(nodes=..., edges=...)`. That is the closest Lynxes equivalent to creating a table directly from Python data in a library like Polars.
 
 Paste this into Python:
 
 ```python
-import pyarrow as pa
 import lynxes as lx
 
-nodes = pa.record_batch(
-    {
+g = lx.graph(
+    nodes={
         "_id": ["alice", "bob", "carol"],
-        "_label": ["Person", "Person", "Person"],
+        "_label": [["Person"], ["Person"], ["Person"]],
         "age": [31, 29, 35],
-    }
-)
-
-edges = pa.record_batch(
-    {
+    },
+    edges={
         "_src": ["alice", "bob"],
         "_dst": ["bob", "carol"],
         "_type": ["KNOWS", "KNOWS"],
-        "_direction": ["out", "out"],
-    }
+        "_direction": [1, 1],
+    },
 )
-
-g = lx.GraphFrame(nodes, edges)
 
 print("nodes:", g.node_count())
 print("edges:", g.edge_count())
@@ -61,11 +59,14 @@ This first step is doing more work than it looks like.
 It proves that:
 
 - Python can import `lynxes`
-- the Arrow dependency chain is working
-- a `GraphFrame` can be constructed successfully
+- Lynxes can construct `NodeFrame`, `EdgeFrame`, and `GraphFrame` directly from plain Python column data
 - Lynxes recognizes the reserved graph columns
 
 If you do not get the counts shown above, stop here and fix this environment before moving on. Later guides assume this part already works.
+
+If you later want to create your own tiny test graph from Python data, use this same pattern again. Keep the node columns and edge columns explicit, and let Lynxes handle the internal Arrow conversion itself.
+
+If you want to verify the file-loading path as well, do that separately with `read_gf()`. It is a useful check, but it answers a different question.
 
 ## Run One Tiny Graph Operation
 

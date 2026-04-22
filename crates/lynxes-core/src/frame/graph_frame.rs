@@ -1,8 +1,9 @@
 use std::collections::VecDeque;
 
-use arrow_array::{Array, BooleanArray, ListArray, RecordBatch, StringArray};
+use arrow_array::{Array, BooleanArray, Int64Array, ListArray, RecordBatch, StringArray};
 use hashbrown::{HashMap, HashSet};
 
+use super::mutable_graph_frame::MutableGraphFrame;
 use crate::{EdgeFrame, GFError, NodeFrame, Result, COL_EDGE_DST, COL_EDGE_SRC, COL_NODE_LABEL};
 
 /// In-memory graph composed of a `NodeFrame` and an `EdgeFrame`.
@@ -114,6 +115,36 @@ impl GraphFrame {
 
     pub fn edge_count(&self) -> usize {
         self.edges.len()
+    }
+
+    /// Materializes the graph topology as a COO `(src, dst)` pair.
+    ///
+    /// The returned coordinates use the `EdgeFrame` local compact node index
+    /// space, not the `NodeFrame` row index. This matches the CSR adjacency
+    /// owned by `EdgeFrame` and is the index space that later GNN-oriented
+    /// utilities consume.
+    ///
+    /// Nodes that exist in `NodeFrame` but never appear as an edge endpoint do
+    /// not appear in the returned coordinate arrays.
+    pub fn to_coo(&self) -> (Int64Array, Int64Array) {
+        let edge_count = self.edges.len();
+        let mut src = Vec::with_capacity(edge_count);
+        let mut dst = Vec::with_capacity(edge_count);
+
+        for src_idx in 0..self.edges.node_count() as u32 {
+            for &dst_idx in self.edges.out_neighbors(src_idx) {
+                src.push(src_idx as i64);
+                dst.push(dst_idx as i64);
+            }
+        }
+
+        (Int64Array::from(src), Int64Array::from(dst))
+    }
+
+    /// Converts the eager immutable graph into a mutable wrapper without
+    /// cloning the node frame or edge frame payloads.
+    pub fn into_mutable(self) -> MutableGraphFrame {
+        MutableGraphFrame::from_graph_frame(self)
     }
 
     pub fn density(&self) -> f64 {
@@ -383,6 +414,29 @@ impl GraphFrame {
         }
 
         neighbors
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn into_mutable_parts(
+        self,
+    ) -> (
+        NodeFrame,
+        EdgeFrame,
+        Option<crate::Schema>,
+        HashMap<String, u32>,
+        Vec<String>,
+        HashMap<String, u32>,
+        Vec<String>,
+    ) {
+        (
+            self.nodes,
+            self.edges,
+            self.schema,
+            self.node_id_to_idx,
+            self.node_idx_to_id,
+            self.edge_node_id_to_idx,
+            self.edge_node_idx_to_id,
+        )
     }
 }
 

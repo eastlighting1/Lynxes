@@ -3,7 +3,7 @@
 This guide is the first full Python walkthrough for Lynxes.
 The goal is not to show every feature. The goal is to take a new user from loading a graph to inspecting it, running a small lazy traversal, and calling an eager algorithm, all while giving them concrete output to compare against.
 
-If you have not already confirmed that the package imports and a tiny in-memory graph works, start with [Verify Your Install](verify-your-install.md). That page is deliberately smaller and catches environment problems earlier.
+If you have not already confirmed that the package imports and that Lynxes can load a tiny self-authored graph, start with [Verify Your Install](verify-your-install.md). That page is deliberately smaller and catches environment problems earlier.
 
 ## What You Will Do
 
@@ -22,7 +22,14 @@ If you are working from a repository checkout, use the shared example file:
 
 `examples/data/example_simple.gf`
 
-This guide assumes that path is available. If you installed only from PyPI and do not have the repository checkout, either clone the repository or use the earlier in-memory guide first and then adapt the code to your own local `.gf` file.
+This guide assumes that path is available. If you installed only from PyPI and do not have the repository checkout, either clone the repository or adapt the same steps to one of your own local `.gf` files.
+
+One design distinction is worth stating explicitly before you start. In Lynxes, "create a graph from Python data" and "load a graph from disk" are different workflows.
+
+- if you want to construct a graph from Python data, use `graph(nodes=..., edges=...)`
+- if you want to load an existing graph file, use `read_gf(...)`, `read_gfb(...)`, or another loader
+
+This guide is about the second workflow: loading an existing graph file and then using it. The constructor workflow is covered first in [Verify Your Install](verify-your-install.md).
 
 ## Step 1: Load The Graph
 

@@ -7,6 +7,7 @@ The pages below stay on the Python side of the boundary even though the implemen
 ## Core Objects
 
 - [`GraphFrame`](graphframe.md)
+- [`MutableGraphFrame`](mutablegraphframe.md)
 - [`LazyGraphFrame`](lazygraphframe.md)
 - [`NodeFrame`](nodeframe.md)
 - [`EdgeFrame`](edgeframe.md)

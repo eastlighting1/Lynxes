@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use arrow_array::{
     new_null_array, Array, ArrayRef, BooleanArray, ListArray, RecordBatch, StringArray,
+    UInt32Array,
 };
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use hashbrown::HashMap;
@@ -113,6 +114,43 @@ impl NodeFrame {
     pub fn row(&self, id: &str) -> Option<RecordBatch> {
         let row_idx = *self.id_index.get(id)? as usize;
         Some(self.data.slice(row_idx, 1))
+    }
+
+    /// Gathers the rows at `row_ids` into a new `RecordBatch`.
+    ///
+    /// The output preserves the schema and row order implied by `row_ids`.
+    /// Repeated indices are allowed and duplicate the corresponding rows.
+    ///
+    /// An empty `row_ids` slice returns an empty batch with the same schema.
+    pub fn gather_rows(&self, row_ids: &[u32]) -> Result<RecordBatch> {
+        if row_ids.is_empty() {
+            return Ok(RecordBatch::new_empty(self.data.schema_ref().clone()));
+        }
+
+        if let Some(&row_id) = row_ids.iter().find(|&&row_id| row_id as usize >= self.len()) {
+            return Err(GFError::InvalidConfig {
+                message: format!(
+                    "gather_rows row id {} is out of bounds for frame of length {}",
+                    row_id,
+                    self.len()
+                ),
+            });
+        }
+
+        let indices = UInt32Array::from(row_ids.to_vec());
+        let gathered_columns: Vec<ArrayRef> = self
+            .data
+            .columns()
+            .iter()
+            .map(|col| arrow::compute::take(col.as_ref(), &indices, None))
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|err| GFError::InvalidConfig {
+                message: format!("gather_rows failed for row ids {:?}: {}", row_ids, err),
+            })?;
+
+        RecordBatch::try_new(self.data.schema_ref().clone(), gathered_columns)
+            .map_err(std::io::Error::other)
+            .map_err(Into::into)
     }
 
     /// Retains only the rows where `mask` is `true`.

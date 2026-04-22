@@ -29,14 +29,14 @@ Connector entry points also return `LazyGraphFrame` directly, because the graph 
 | `select_edges(columns)` | `LazyGraphFrame` | Restricts visible edge columns. |
 | `expand(edge_type=None, hops=1, direction="out")` | `LazyGraphFrame` | Adds a traversal expansion step. |
 | `aggregate_neighbors(edge_type, agg)` | `LazyGraphFrame` | Adds a neighbor-aggregation step. |
-| `match_pattern(steps, where_=None)` | `LazyGraphFrame` | Pattern-oriented surface with limited support status. |
+| `match_pattern(steps, where_=None)` | `LazyGraphFrame` | Pattern-oriented surface that materializes tabular binding results. |
 | `explain()` | `str` | Renders the current logical plan. |
 
 ### Materialization methods
 
 | Method | Returns | Notes |
 | :--- | :--- | :--- |
-| `collect()` | `GraphFrame` | Materializes the full graph-shaped result. |
+| `collect()` | `GraphFrame \| pyarrow.RecordBatch` | Materializes either a graph-shaped result or a pattern-row result. |
 | `collect_nodes()` | `NodeFrame` | Materializes only the node-side result. |
 | `collect_edges()` | `EdgeFrame` | Materializes only the edge-side result. |
 
@@ -126,17 +126,13 @@ Add a pattern-style operation to the lazy plan.
 | `steps` | `list[...]` | Required | - | Pattern step description. |
 | `where_` | `Expr \| None` | Optional | `None` | Optional filter expression. |
 
-#### Support Status
+### `collect() -> GraphFrame | pyarrow.RecordBatch`
 
-This method is present in the Python surface, but it should not be read as a fully general, fully finished production path yet. The public shape exists and can be referenced, but the end-to-end feature is still partial compared with the rest of the lazy query surface.
-
-### `collect() -> GraphFrame`
-
-Materialize the lazy plan as a graph-shaped result.
+Materialize the lazy plan.
 
 #### Returns
 
-Returns an eager `GraphFrame`.
+Returns an eager `GraphFrame` for graph-domain plans. For `match_pattern(...)` plans, returns a pyarrow `RecordBatch` with alias-prefixed columns such as `a._id` or `e._type`.
 
 #### Raises
 
@@ -152,4 +148,4 @@ Materialize only the edge-side result.
 
 ## Notes
 
-`LazyGraphFrame` does not hold a ready-made graph result. That is why plan-building methods keep returning the same lazy wrapper type, and it is why return-type boundaries matter here. If you need a real `GraphFrame`, `NodeFrame`, or `EdgeFrame`, one of the collection methods is the point where the work actually happens.
+`LazyGraphFrame` does not hold a ready-made graph result. That is why plan-building methods keep returning the same lazy wrapper type, and it is why return-type boundaries matter here. If you need a real `GraphFrame`, `NodeFrame`, `EdgeFrame`, or pattern-row batch, collection is the point where the work actually happens.

@@ -98,6 +98,7 @@ fn bench_parallel_expand(c: &mut Criterion) {
         subgraph_caching: false,
         early_termination: false,
         partition_parallel: false,
+        pattern_expansion: true,
     };
 
     let parallel_opts = OptimizerOptions {

@@ -6,6 +6,8 @@
 
 - `graph.edges()`
 - `lazy.collect_edges()`
+- `EdgeFrame.from_dict({...})`
+- `EdgeFrame.from_arrow(batch)`
 
 ## Reserved Edge Columns
 
@@ -16,6 +18,7 @@
 
 ## Common Methods
 
+- `EdgeFrame.from_dict({...})`
 - `len()`
 - `is_empty()`
 - `column_names()`
@@ -25,6 +28,8 @@
 
 Although an edge result looks tabular at the API boundary, Lynxes still treats graph structure as first-class internally.
 Use `EdgeFrame` for inspection and export, not as a replacement for graph traversal semantics.
+
+If you are creating an edge frame from Python data, `from_dict({...})` is the shortest constructor path. `from_arrow(...)` is still useful when Arrow batches already exist upstream.
 
 ## Example
 

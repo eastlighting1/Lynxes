@@ -15,6 +15,8 @@ pub use crate::algo::pagerank::PageRankConfig;
 pub use crate::algo::partition::{
     GraphPartitioner, PartitionMethod as GraphPartitionMethod, PartitionStats, PartitionedGraph,
 };
+pub use crate::algo::sampling;
+pub use crate::algo::sampling::{SampledSubgraph, SamplingConfig};
 pub use crate::algo::shortest_path::ShortestPathConfig;
 pub use crate::algo::traversal::{bfs, BfsConfig};
 pub use crate::connector::{Connector, ConnectorFuture, ExpandResult};
@@ -24,10 +26,12 @@ pub use crate::display::{
     SchemaFieldSummary, SchemaSummary, StructureStats,
 };
 pub use crate::error::{GFError, Result, SchemaValidationError};
+pub use crate::frame::mutable_graph_frame::MutableGraphFrame;
 pub use crate::frame::{CsrIndex, EdgeFrame, GraphFrame, NodeFrame};
 pub use crate::query::optimizer::{
     EarlyTermination, Optimizer, OptimizerOptions, OptimizerPass, PartitionParallel,
-    PredicatePushdown, ProjectionPushdown, SubgraphCaching, TraversalPruning,
+    PatternExpansion, PredicatePushdown, ProjectionPushdown, SubgraphCaching,
+    TraversalPruning,
 };
 pub use crate::query::{
     AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan, PartitionStrategy, Pattern,

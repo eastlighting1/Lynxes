@@ -7,9 +7,12 @@
 - `graph.nodes()`
 - `lazy.collect_nodes()`
 - algorithm outputs such as `pagerank()` or `community_detection()`
+- `NodeFrame.from_dict({...})`
+- `NodeFrame.from_arrow(batch)`
 
 ## Common Methods
 
+- `NodeFrame.from_dict({...})`
 - `len()`
 - `is_empty()`
 - `column_names()`
@@ -22,6 +25,7 @@
 
 - node results still preserve graph identity semantics through `_id`
 - `to_pyarrow()` is the main way to hand the result to Arrow-oriented tooling
+- `from_dict({...})` is the shortest Python-native constructor when you want Lynxes to build the frame from plain column data
 
 ## Example
 

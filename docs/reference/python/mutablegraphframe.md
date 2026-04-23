@@ -19,18 +19,18 @@ mutable = g.into_mutable()
 
 | Method | Returns | Notes |
 | :--- | :--- | :--- |
-| `add_node(node)` | `None` | Append one node row. |
-| `add_nodes_batch(nodes)` | `None` | Append several node rows. |
-| `add_edge(src, dst)` | `None` | Append one edge by node id. |
-| `delete_node(id)` | `None` | Logically remove one node. |
-| `delete_edge(edge_row)` | `None` | Logically remove one stable edge row. |
-| `update_node(old_id, node)` | `None` | Replace one node via tombstone + append. |
-| `compact()` | `None` | Publish a new compacted base snapshot. |
+| `add_node(node)` | `MutableGraphFrame` | Append one node row; fluent in Python. |
+| `add_nodes_batch(nodes)` | `MutableGraphFrame` | Append several node rows; fluent in Python. |
+| `add_edge(src, dst)` | `MutableGraphFrame` | Append one edge by node id; fluent in Python. |
+| `delete_node(id)` | `MutableGraphFrame` | Logically remove one node; fluent in Python. |
+| `delete_edge(edge_row)` | `MutableGraphFrame` | Logically remove one stable edge row; fluent in Python. |
+| `update_node(old_id, node)` | `MutableGraphFrame` | Replace one node via tombstone + append; fluent in Python. |
+| `compact()` | `MutableGraphFrame` | Publish a new compacted base snapshot and keep chaining. |
 | `freeze()` | `GraphFrame` | Return to an immutable eager graph. |
 
 ## Selected Methods
 
-### `add_node(node) -> None`
+### `add_node(node) -> MutableGraphFrame`
 
 Append one node row.
 
@@ -45,7 +45,7 @@ Append one node row.
 - `ValueError` if the input frame does not contain exactly one row
 - `TypeError` if the argument is not a `NodeFrame`
 
-### `add_nodes_batch(nodes) -> None`
+### `add_nodes_batch(nodes) -> MutableGraphFrame`
 
 Append a multi-row batch of nodes.
 
@@ -55,7 +55,7 @@ Append a multi-row batch of nodes.
 | :--- | :--- | :--- | :--- | :--- |
 | `nodes` | `NodeFrame` | Required | - | One or more rows to append. |
 
-### `add_edge(src, dst) -> None`
+### `add_edge(src, dst) -> MutableGraphFrame`
 
 Append one edge by source and destination node id.
 
@@ -70,7 +70,7 @@ Append one edge by source and destination node id.
 
 - `KeyError` if either node id does not exist
 
-### `delete_node(id) -> None`
+### `delete_node(id) -> MutableGraphFrame`
 
 Logically remove one node and hide its incident edges from the mutable view.
 
@@ -84,7 +84,7 @@ Logically remove one node and hide its incident edges from the mutable view.
 
 - `KeyError` if the node id does not exist
 
-### `delete_edge(edge_row) -> None`
+### `delete_edge(edge_row) -> MutableGraphFrame`
 
 Logically remove one stable edge row.
 
@@ -98,7 +98,7 @@ Logically remove one stable edge row.
 
 - `KeyError` if the edge row does not exist
 
-### `update_node(old_id, node) -> None`
+### `update_node(old_id, node) -> MutableGraphFrame`
 
 Replace one node through the current tombstone-and-reinsert path.
 
@@ -113,11 +113,11 @@ Replace one node through the current tombstone-and-reinsert path.
 
 This is not an in-place Arrow row mutation. The current implementation keeps the engine's immutable storage model and treats the operation as remove + append.
 
-### `compact() -> None`
+### `compact() -> MutableGraphFrame`
 
 Compact delta state into a new base snapshot.
 
-Use this when you want to force publication of a new stable adjacency snapshot before freezing or before a repeated read-heavy preprocessing phase.
+Use this when you want to force publication of a new stable adjacency snapshot before a repeated read-heavy preprocessing phase, or when you want an explicit checkpoint in the middle of a longer rewrite chain.
 
 ### `freeze() -> GraphFrame`
 
@@ -131,19 +131,20 @@ Returns a normal immutable `GraphFrame`.
 
 `freeze()` consumes the current mutable state. In Python terms, you should treat the `MutableGraphFrame` instance as finished after this call.
 
+`freeze()` already performs the compaction it needs, so `compact()` is optional in the common one-shot preprocessing path.
+
 ## Usage Pattern
 
 ```python
 import lynxes as lx
 
 g = lx.read_gf("examples/data/example_simple.gf")
-mutable = g.into_mutable()
-
-mutable.delete_node("charlie")
-mutable.add_edge("alice", "diana")
-mutable.compact()
-
-g2 = mutable.freeze()
+g2 = (
+    g.into_mutable()
+    .delete_node("charlie")
+    .add_edge("alice", "diana")
+    .freeze()
+)
 ```
 
 ## Related Pages

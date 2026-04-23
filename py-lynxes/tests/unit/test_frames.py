@@ -279,14 +279,8 @@ class TestPartitionedGraph:
 
 
 class TestMutableGraphFrame:
-    def test_into_mutable_add_edge_compact_and_freeze(self, graph):
-        mutable = graph.into_mutable()
-
-        assert type(mutable).__name__ == "MutableGraphFrame"
-
-        mutable.add_edge("charlie", "alice")
-        mutable.compact()
-        frozen = mutable.freeze()
+    def test_into_mutable_mutators_are_fluent_and_freeze_without_explicit_compact(self, graph):
+        frozen = graph.into_mutable().add_edge("charlie", "alice").freeze()
 
         assert type(frozen).__name__ == "GraphFrame"
         assert frozen.node_count() == graph.node_count()

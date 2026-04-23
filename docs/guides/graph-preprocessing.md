@@ -4,6 +4,8 @@ This guide shows the intended shape of preprocessing work in Lynxes: start from 
 
 The point is not to keep a graph mutable forever. The point is to make one explicit cleanup or reshaping step part of the workflow instead of an external one-off script.
 
+For simple preprocessing flows, the Python mutator methods are fluent. That means you can chain rewrites and end with `freeze()` directly. `freeze()` already performs the compaction it needs.
+
 ## When To Use This Guide
 
 Use this guide when you need to do one of the following before running the rest of your workflow:
@@ -107,7 +109,7 @@ mutable.add_nodes_batch(batch_nodes)
 mutable.compact()
 ```
 
-You do not always need to call `compact()` manually before `freeze()`, but it is a useful explicit checkpoint while you are learning the workflow.
+You do not need to call `compact()` before `freeze()` for the normal one-shot preprocessing path. Keep it for explicit checkpoints or for a repeated read-heavy mutable phase where you want to publish a new stable snapshot before continuing.
 
 ## Freeze Back Into A Regular Graph
 
@@ -140,14 +142,12 @@ The clean mental model is:
 
 ```python
 g = lx.read_gf("examples/data/example_simple.gf")
-mutable = g.into_mutable()
-
-# rewrite phase
-mutable.delete_node("charlie")
-mutable.add_edge("alice", "diana")
-mutable.compact()
-
-g2 = mutable.freeze()
+g2 = (
+    g.into_mutable()
+    .delete_node("charlie")
+    .add_edge("alice", "diana")
+    .freeze()
+)
 ```
 
 Treat that middle section as preprocessing. Do not treat it as a long-lived mutable graph session.

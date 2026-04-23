@@ -1379,65 +1379,91 @@ impl PySampledSubgraph {
 
 #[pymethods]
 impl PyMutableGraphFrame {
-    fn add_node(&mut self, node: PyRef<'_, PyNodeFrame>) -> PyResult<()> {
-        self.inner_mut()?
+    fn add_node<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        node: PyRef<'_, PyNodeFrame>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.inner_mut()?
             .add_node((*node.inner).clone())
-            .map_err(gf_error_to_py_err)
+            .map_err(gf_error_to_py_err)?;
+        Ok(slf)
     }
 
-    fn add_nodes_batch(&mut self, nodes: PyRef<'_, PyNodeFrame>) -> PyResult<()> {
-        self.inner_mut()?
+    fn add_nodes_batch<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        nodes: PyRef<'_, PyNodeFrame>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.inner_mut()?
             .add_nodes_batch((*nodes.inner).clone())
-            .map_err(gf_error_to_py_err)
+            .map_err(gf_error_to_py_err)?;
+        Ok(slf)
     }
 
     #[pyo3(signature = (src, dst, *, edge_type=None, direction="out", attrs=None))]
-    fn add_edge(
-        &mut self,
+    fn add_edge<'py>(
+        mut slf: PyRefMut<'py, Self>,
         src: &str,
         dst: &str,
         edge_type: Option<&str>,
         direction: &str,
         attrs: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<()> {
+    ) -> PyResult<PyRefMut<'py, Self>> {
         let direction = python_to_direction(direction)?;
         let schema = {
-            let inner = self.inner_mut()?;
+            let inner = slf.inner_mut()?;
             inner.edge_schema()
         };
         let edge = edge_row_from_schema(schema.as_ref(), src, dst, edge_type, direction, attrs)?;
 
-        self.inner_mut()?
+        slf.inner_mut()?
             .add_edge_row(edge)
-            .map_err(gf_error_to_py_err)
+            .map_err(gf_error_to_py_err)?;
+        Ok(slf)
     }
 
-    fn delete_node(&mut self, id: &str) -> PyResult<()> {
-        self.inner_mut()?
+    fn delete_node<'py>(mut slf: PyRefMut<'py, Self>, id: &str) -> PyResult<PyRefMut<'py, Self>> {
+        slf.inner_mut()?
             .delete_node(id)
-            .map_err(gf_error_to_py_err)
+            .map_err(gf_error_to_py_err)?;
+        Ok(slf)
     }
 
-    fn delete_edge(&mut self, edge_row: u32) -> PyResult<()> {
-        self.inner_mut()?
+    fn delete_edge<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        edge_row: u32,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.inner_mut()?
             .delete_edge(edge_row)
-            .map_err(gf_error_to_py_err)
+            .map_err(gf_error_to_py_err)?;
+        Ok(slf)
     }
 
-    fn update_node(&mut self, old_id: &str, node: PyRef<'_, PyNodeFrame>) -> PyResult<()> {
-        self.inner_mut()?
+    fn update_node<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        old_id: &str,
+        node: PyRef<'_, PyNodeFrame>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.inner_mut()?
             .update_node(old_id, (*node.inner).clone())
-            .map_err(gf_error_to_py_err)
+            .map_err(gf_error_to_py_err)?;
+        Ok(slf)
     }
 
-    fn update_edge(&mut self, edge_row: u32, src: &str, dst: &str) -> PyResult<()> {
-        self.inner_mut()?
+    fn update_edge<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        edge_row: u32,
+        src: &str,
+        dst: &str,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        slf.inner_mut()?
             .update_edge(edge_row, src, dst)
-            .map_err(gf_error_to_py_err)
+            .map_err(gf_error_to_py_err)?;
+        Ok(slf)
     }
 
-    fn compact(&mut self) -> PyResult<()> {
-        self.inner_mut()?.compact().map_err(gf_error_to_py_err)
+    fn compact<'py>(mut slf: PyRefMut<'py, Self>) -> PyResult<PyRefMut<'py, Self>> {
+        slf.inner_mut()?.compact().map_err(gf_error_to_py_err)?;
+        Ok(slf)
     }
 
     fn freeze(&mut self) -> PyResult<PyGraphFrame> {

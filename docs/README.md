@@ -12,8 +12,8 @@ It focuses on how to install Lynxes, load data, run queries, and use the CLI fro
 - [Python Quickstart](quickstart/python.md)
 - [CLI Quickstart](quickstart/cli.md)
 - [`.gf` Format Authoring Guide](gf_authoring_guide.md)
-- [Guide Index](guides/index.md)
-- [Cookbook Index](cookbook/index.md)
+- [Guide Index](guides/README.md)
+- [Cookbook Index](cookbook/README.md)
 
 ## Common Tasks
 
@@ -42,7 +42,7 @@ It focuses on how to install Lynxes, load data, run queries, and use the CLI fro
 
 ## API Reference
 
-- [Reference Index](reference/index.md)
+- [Reference Index](reference/README.md)
 - [`GraphFrame`](reference/python/graphframe.md)
 - [`LazyGraphFrame`](reference/python/lazygraphframe.md)
 - [`NodeFrame`](reference/python/nodeframe.md)
@@ -62,7 +62,7 @@ It focuses on how to install Lynxes, load data, run queries, and use the CLI fro
 
 ## Concepts
 
-- [Concept overview](concepts/index.md)
+- [Concept overview](concepts/README.md)
 - [Why Lynxes exists](concepts/why-lynxes.md)
 - [Memory layout and CSR](concepts/memory-layout-and-csr.md)
 - [Lazy engine](concepts/lazy-engine.md)

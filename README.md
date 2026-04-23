@@ -56,7 +56,7 @@ print(g.shortest_path("alice", "charlie"))
 
 ## Start Here
 
-- User docs: `docs/index.md`
+- User docs: `docs/README.md`
 - Install guide: `docs/install.md`
 - Python quickstart: `docs/quickstart/python.md`
 - CLI quickstart: `docs/quickstart/cli.md`

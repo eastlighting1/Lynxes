@@ -8,7 +8,7 @@ That distinction matters because the rest of the documentation has different job
 
 The Python reference is organized around the public object surfaces and the module-level entry points exposed by `lynxes`.
 
-- [Python reference index](python/index.md)
+- [Python reference index](python/README.md)
 - [`GraphFrame`](python/graphframe.md)
 - [`LazyGraphFrame`](python/lazygraphframe.md)
 - [`NodeFrame`](python/nodeframe.md)
@@ -24,7 +24,7 @@ The Python reference is organized around the public object surfaces and the modu
 
 The CLI reference is command-oriented. It is meant to tell you what each command accepts, which defaults are in play, and how rendering-related options interact.
 
-- [CLI reference index](cli/index.md)
+- [CLI reference index](cli/README.md)
 - [`lynxes`](cli/gf.md)
 - [`lynxes inspect`](cli/gf-inspect.md)
 - [`lynxes convert`](cli/gf-convert.md)
@@ -35,7 +35,7 @@ The CLI reference is command-oriented. It is meant to tell you what each command
 
 The format reference covers the on-disk shapes and reserved graph semantics Lynxes expects to find when it loads a graph.
 
-- [Format reference index](formats/index.md)
+- [Format reference index](formats/README.md)
 - [Reserved graph columns](formats/reserved-columns.md)
 - [`.gf` format](formats/gf.md)
 - [`.gf` authoring guide](../gf_authoring_guide.md)

@@ -51,12 +51,17 @@ If you are round-tripping from parquet through a `GraphFrame`, the same pattern 
 ```python
 import lynxes as lx
 
+source = lx.read_gf("examples/data/example_simple.gf")
+source.write_parquet_graph("nodes.parquet", "edges.parquet")
+
 g = lx.read_parquet_graph("nodes.parquet", "edges.parquet")
 g.write_gfb("example.gfb")
 restored = lx.read_gfb("example.gfb")
 
 print(restored.node_count(), restored.edge_count())
 ```
+
+If you already have a parquet node/edge pair, start from `read_parquet_graph(...)` directly and skip the `write_parquet_graph(...)` line above.
 
 If the graph is important enough that counts alone are not reassuring, inspect one or two representative reserved columns after the round-trip:
 

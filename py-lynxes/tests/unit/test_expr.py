@@ -38,19 +38,19 @@ class TestStrNamespace:
 
     def test_contains_filters_nodes(self, graph):
         nf = graph.lazy().filter_nodes(gf.col("_id").str.contains("li")).collect_nodes()
-        ids = set(nf.to_pyarrow()["_id"].to_pylist())
+        ids = set(nf.ids())
         assert "alice" in ids
         assert "charlie" in ids
         assert "bob" not in ids
 
     def test_startswith_filters_nodes(self, graph):
         nf = graph.lazy().filter_nodes(gf.col("_id").str.startswith("al")).collect_nodes()
-        ids = set(nf.to_pyarrow()["_id"].to_pylist())
+        ids = set(nf.ids())
         assert "alice" in ids
         assert len(ids) == 1
 
     def test_endswith_filters_nodes(self, graph):
         nf = graph.lazy().filter_nodes(gf.col("_id").str.endswith("ice")).collect_nodes()
-        ids = set(nf.to_pyarrow()["_id"].to_pylist())
+        ids = set(nf.ids())
         assert "alice" in ids
         assert len(ids) == 1

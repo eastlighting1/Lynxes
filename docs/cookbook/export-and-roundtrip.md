@@ -61,7 +61,7 @@ print(restored.node_count(), restored.edge_count())
 If the graph is important enough that counts alone are not reassuring, inspect one or two representative reserved columns after the round-trip:
 
 ```python
-print(restored.nodes().to_pyarrow()["_id"].to_pylist()[:3])
+print(restored.nodes().ids()[:3])
 print(restored.edges().to_pyarrow()["_type"].to_pylist()[:3])
 ```
 

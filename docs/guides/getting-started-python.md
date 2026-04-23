@@ -94,7 +94,7 @@ result = (
 
 print("expanded nodes:", result.node_count())
 print("expanded edges:", result.edge_count())
-print("expanded ids:", result.nodes().to_pyarrow()["_id"].to_pylist())
+print("expanded ids:", result.nodes().ids())
 ```
 
 On the shared example graph, the result should look like this:

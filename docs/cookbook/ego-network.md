@@ -36,7 +36,7 @@ ego = (
 
 print("nodes:", ego.node_count())
 print("edges:", ego.edge_count())
-print("ids:", ego.nodes().to_pyarrow()["_id"].to_pylist())
+print("ids:", ego.nodes().ids())
 ```
 
 On the shared example graph, this should produce a result shaped like:
@@ -63,7 +63,7 @@ ego_2hop = (
 
 print("nodes:", ego_2hop.node_count())
 print("edges:", ego_2hop.edge_count())
-print("ids:", ego_2hop.nodes().to_pyarrow()["_id"].to_pylist())
+print("ids:", ego_2hop.nodes().ids())
 ```
 
 On the same example graph, the two-hop version should bring in `charlie` as well.

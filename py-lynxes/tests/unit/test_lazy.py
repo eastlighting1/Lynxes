@@ -51,7 +51,7 @@ class TestExpand:
             .expand(hops=2, direction="out")
             .collect()
         )
-        node_ids = {row for row in result.nodes().to_pyarrow()["_id"].to_pylist()}
+        node_ids = set(result.nodes().ids())
         assert "charlie" in node_ids
 
     def test_expand_with_edge_type_filter(self, graph):
@@ -61,7 +61,7 @@ class TestExpand:
             .expand(edge_type="KNOWS", hops=2, direction="out")
             .collect()
         )
-        node_ids = {row for row in result.nodes().to_pyarrow()["_id"].to_pylist()}
+        node_ids = set(result.nodes().ids())
         assert "acme" not in node_ids
 
     def test_expand_in_direction(self, graph):
@@ -71,7 +71,7 @@ class TestExpand:
             .expand(hops=1, direction="in")
             .collect()
         )
-        node_ids = {row for row in result.nodes().to_pyarrow()["_id"].to_pylist()}
+        node_ids = set(result.nodes().ids())
         assert "bob" in node_ids
 
 

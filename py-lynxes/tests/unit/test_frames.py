@@ -25,6 +25,9 @@ class TestNodeFrameSetOps:
         assert frame.len() == 2
         assert frame.column_names() == ["_id", "_label", "age"]
 
+    def test_ids_returns_python_list_in_row_order(self, graph):
+        assert graph.nodes().ids() == ["alice", "bob", "charlie", "diana", "acme"]
+
     def test_concat_disjoint_frames(self, graph):
         persons = graph.lazy().filter_nodes(gf.col("_label").contains("Person")).collect_nodes()
         companies = graph.lazy().filter_nodes(gf.col("_label").contains("Company")).collect_nodes()
@@ -265,7 +268,7 @@ class TestPartitionedGraph:
     def test_distributed_expand_reaches_direct_neighbors(self, graph):
         pg = graph.partition(2)
         node_frame, _ = pg.distributed_expand(["alice"], hops=1, direction="out")
-        ids = {row for row in node_frame.to_pyarrow()["_id"].to_pylist() if row is not None}
+        ids = set(node_frame.ids())
         assert "bob" in ids or "diana" in ids
 
 
@@ -294,7 +297,7 @@ class TestMutableGraphFrame:
         mutable.delete_node("charlie")
 
         frozen = mutable.freeze()
-        ids = set(frozen.nodes().to_pyarrow()["_id"].to_pylist())
+        ids = set(frozen.nodes().ids())
 
         assert "dora" in ids
         assert "erin" in ids

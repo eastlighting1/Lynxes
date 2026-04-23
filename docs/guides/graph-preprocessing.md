@@ -129,7 +129,7 @@ The easiest checks are:
 ```python
 print(clean.node_count())
 print(clean.edge_count())
-print(clean.nodes().to_pyarrow()["_id"].to_pylist())
+print(clean.nodes().ids())
 ```
 
 You should see the rewritten graph shape, not the original one.

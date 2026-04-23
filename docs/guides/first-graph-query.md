@@ -35,7 +35,7 @@ one_hop = seeded.expand(hops=1, direction="out").collect()
 
 print("nodes:", one_hop.node_count())
 print("edges:", one_hop.edge_count())
-print("ids:", one_hop.nodes().to_pyarrow()["_id"].to_pylist())
+print("ids:", one_hop.nodes().ids())
 ```
 
 You should see a result shaped like this:
@@ -57,7 +57,7 @@ two_hop = seeded.expand(hops=2, direction="out").collect()
 
 print("nodes:", two_hop.node_count())
 print("edges:", two_hop.edge_count())
-print("ids:", two_hop.nodes().to_pyarrow()["_id"].to_pylist())
+print("ids:", two_hop.nodes().ids())
 ```
 
 On the shared example graph, this should look like:

@@ -367,6 +367,13 @@ impl PyNodeFrame {
             .collect()
     }
 
+    fn ids(&self) -> Vec<String> {
+        let ids = self.inner.id_column();
+        (0..ids.len())
+            .map(|idx| ids.value(idx).to_owned())
+            .collect()
+    }
+
     fn filter(&self, mask: &Bound<'_, PyAny>) -> PyResult<Self> {
         let mask = extract_boolean_mask(mask)?;
         let frame = self.inner.filter(&mask).map_err(gf_error_to_py_err)?;

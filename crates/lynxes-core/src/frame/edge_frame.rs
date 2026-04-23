@@ -7,6 +7,7 @@ use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use hashbrown::HashMap;
 
 use super::csr::CsrIndex;
+use super::{graph_frame::GraphFrame, node_frame::NodeFrame};
 use crate::{
     Direction, GFError, Result, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE,
     EDGE_RESERVED_COLUMNS,
@@ -152,6 +153,14 @@ impl EdgeFrame {
     /// the same as the `NodeFrame` row index ??`GraphFrame` builds that mapping.
     pub fn node_row_idx(&self, id: &str) -> Option<u32> {
         self.node_index.get(id).copied()
+    }
+
+    /// Rehydrate this edge frame into a validated [`GraphFrame`] using `nodes`.
+    ///
+    /// This is sugar over [`GraphFrame::new`] that keeps the edge-owned API
+    /// discoverable when callers already hold an `EdgeFrame`.
+    pub fn with_nodes(&self, nodes: NodeFrame) -> Result<GraphFrame> {
+        GraphFrame::new(nodes, self.clone())
     }
 
     pub fn to_record_batch(&self) -> &RecordBatch {

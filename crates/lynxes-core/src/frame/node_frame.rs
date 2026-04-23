@@ -6,6 +6,7 @@ use arrow_array::{
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use hashbrown::HashMap;
 
+use super::{edge_frame::EdgeFrame, graph_frame::GraphFrame};
 use crate::{GFError, Result, COL_NODE_ID, COL_NODE_LABEL, NODE_RESERVED_COLUMNS};
 
 /// Columnar node storage with O(1) user-id to row-index lookup.
@@ -243,6 +244,14 @@ impl NodeFrame {
     /// Panics if `offset + length > self.len()` ??same contract as `RecordBatch::slice`.
     pub fn slice(&self, offset: usize, length: usize) -> Self {
         Self::from_valid_batch(self.data.slice(offset, length))
+    }
+
+    /// Rehydrate this node frame into a validated [`GraphFrame`] using `edges`.
+    ///
+    /// This is sugar over [`GraphFrame::new`] that keeps the node-owned API
+    /// discoverable when callers already hold a `NodeFrame`.
+    pub fn with_edges(&self, edges: EdgeFrame) -> Result<GraphFrame> {
+        GraphFrame::new(self.clone(), edges)
     }
 
     pub fn to_record_batch(&self) -> &RecordBatch {

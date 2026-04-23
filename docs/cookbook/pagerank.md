@@ -33,7 +33,7 @@ ranks = g.pagerank()
 
 print("columns:", ranks.column_names())
 print("rows:", ranks.len())
-print(ranks.to_pyarrow())
+print(ranks.head(5, sort_by="pagerank", descending=True))
 ```
 
 The result should be a `NodeFrame` with one row per node and a score-bearing column for the PageRank result.
@@ -60,15 +60,10 @@ import lynxes as lx
 g = lx.read_gf("examples/data/example_simple.gf")
 ranks = g.pagerank()
 
-top = (
-    ranks.to_pyarrow()
-    .sort_by([("pagerank", "descending")])
-)
-
-print(top)
+print(ranks.head(5, sort_by="pagerank", descending=True))
 ```
 
-That "sort immediately" pattern is usually the right one. Raw score frames are useful, but in day-to-day work the first real question is almost always "who is at the top?" or "which ids should I inspect next?"
+That "sort immediately" pattern is usually the right one. Raw score frames are useful, but in day-to-day work the first real question is almost always "who is at the top?" or "which ids should I inspect next?" If you need Arrow-native downstream work after that first inspection, `ranks.to_pyarrow()` is still the handoff path.
 
 ## What To Check
 

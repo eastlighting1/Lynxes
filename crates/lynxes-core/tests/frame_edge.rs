@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use arrow_array::{Array, ArrayRef, Float64Array, Int64Array, Int8Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
-use common::{edge_batch_with_since, minimal_edge_schema, three_edge_batch};
+use common::{edge_batch_with_since, graph_node_batch, minimal_edge_schema, three_edge_batch};
 use lynxes_core::{
-    EdgeFrame, GFError, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE,
+    EdgeFrame, GFError, NodeFrame, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE,
 };
 
 #[test]
@@ -162,4 +162,15 @@ fn concat_rejects_incompatible_types() {
 
     let err = EdgeFrame::concat(&[&a, &b]).unwrap_err();
     assert!(matches!(err, GFError::TypeMismatch { .. }));
+}
+
+#[test]
+fn with_nodes_rehydrates_valid_graph() {
+    let edges = EdgeFrame::from_record_batch(edge_batch_with_since()).unwrap();
+    let nodes = NodeFrame::from_record_batch(graph_node_batch()).unwrap();
+
+    let graph = edges.with_nodes(nodes).unwrap();
+
+    assert_eq!(graph.node_count(), 4);
+    assert_eq!(graph.edge_count(), 2);
 }

@@ -20,8 +20,8 @@ def main() -> None:
     print(f"shortest path: {path}")
 
     ranks = graph.pagerank()
-    print(f"pagerank columns: {ranks.column_names()}")
-    print(f"pagerank rows: {ranks.len()}")
+    print("pagerank preview:")
+    print(ranks.head(5, sort_by="pagerank", descending=True))
 
 
 if __name__ == "__main__":

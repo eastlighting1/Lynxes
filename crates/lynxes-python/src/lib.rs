@@ -1,7 +1,8 @@
 #![allow(clippy::useless_conversion, clippy::wrong_self_convention)]
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -9,9 +10,9 @@ use std::{
 
 use arrow::{
     array::{
-        make_array, Array, ArrayData, ArrayRef, BooleanArray, BooleanBuilder, Float64Array,
-        Float64Builder, Int64Array, Int64Builder, Int8Array, ListBuilder, StringArray,
-        StringBuilder,
+        make_array, Array, ArrayData, ArrayRef, BooleanArray, BooleanBuilder, Float32Array,
+        Float64Array, Float64Builder, Int16Array, Int32Array, Int64Array, Int64Builder, Int8Array,
+        ListArray, ListBuilder, StringArray, StringBuilder, UInt32Array, UInt64Array,
     },
     datatypes::{DataType, Field, Fields, Schema},
     pyarrow::{PyArrowType, ToPyArrow},
@@ -26,7 +27,8 @@ use lynxes_core::{
     DisplayView, EdgeFrame, EdgeTypeSpec, Expr, GFError, GlimpseSummary, GraphFrame, GraphInfo,
     GraphPartitionMethod, GraphPartitioner, MutableGraphFrame, NodeFrame, PageRankConfig,
     PartitionedGraph, SampledSubgraph, SamplingConfig, SchemaSummary, ShortestPathConfig,
-    StructureStats, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE,
+    StructureStats, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_LABEL,
+    EDGE_RESERVED_COLUMNS, NODE_RESERVED_COLUMNS,
 };
 use lynxes_io::{
     parse_gf, read_gfb, read_parquet_graph, write_gf as core_write_gf, write_gfb,
@@ -149,6 +151,30 @@ impl PyNodeFrame {
             .to_pyarrow(py)
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))
     }
+
+    fn render_display_view(
+        &self,
+        view: FramePreviewView,
+        rows: usize,
+        sort_by: Option<String>,
+        descending: bool,
+        width: Option<usize>,
+    ) -> PyResult<String> {
+        render_frame_preview(
+            &format!(
+                "NodeFrame(rows={}, columns={}, order={})",
+                self.inner.len(),
+                self.inner.schema().fields().len(),
+                frame_order_name(sort_by.is_some(), descending)
+            ),
+            self.inner.to_record_batch(),
+            view,
+            rows.max(1),
+            sort_by,
+            descending,
+            width,
+        )
+    }
 }
 
 impl PyEdgeFrame {
@@ -171,6 +197,31 @@ impl PyEdgeFrame {
             .clone()
             .to_pyarrow(py)
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
+
+    fn render_display_view(
+        &self,
+        view: FramePreviewView,
+        rows: usize,
+        sort_by: Option<String>,
+        descending: bool,
+        width: Option<usize>,
+    ) -> PyResult<String> {
+        render_frame_preview(
+            &format!(
+                "EdgeFrame(rows={}, columns={}, nodes={}, order={})",
+                self.inner.len(),
+                self.inner.schema().fields().len(),
+                self.inner.node_count(),
+                frame_order_name(sort_by.is_some(), descending)
+            ),
+            self.inner.to_record_batch(),
+            view,
+            rows.max(1),
+            sort_by,
+            descending,
+            width,
+        )
     }
 }
 
@@ -300,6 +351,10 @@ impl PyNodeFrame {
         self.inner.len()
     }
 
+    fn node_count(&self) -> usize {
+        self.inner.len()
+    }
+
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
@@ -353,12 +408,84 @@ impl PyNodeFrame {
         Ok(Self::new(result))
     }
 
+    fn with_edges(&self, edges: PyRef<'_, PyEdgeFrame>) -> PyResult<PyGraphFrame> {
+        let graph = self
+            .inner
+            .with_edges((*edges.inner).clone())
+            .map_err(gf_error_to_py_err)?;
+        Ok(PyGraphFrame::new(graph))
+    }
+
     fn gather_rows(&self, row_ids: Vec<u32>, py: Python<'_>) -> PyResult<PyObject> {
         self.inner
             .gather_rows(&row_ids)
             .map_err(gf_error_to_py_err)?
             .to_pyarrow(py)
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        match self.render_display_view(FramePreviewView::Table, 10, None, false, Some(100)) {
+            Ok(rendered) => rendered,
+            Err(err) => format!("NodeFrame(<display error: {err}>)"),
+        }
+    }
+
+    #[pyo3(signature = (n=5, *, sort_by=None, descending=false, width=None))]
+    fn head(
+        &self,
+        n: usize,
+        sort_by: Option<String>,
+        descending: bool,
+        width: Option<usize>,
+    ) -> PyResult<String> {
+        self.render_display_view(FramePreviewView::Head, n, sort_by, descending, width)
+    }
+
+    #[pyo3(signature = (n=5, *, sort_by=None, descending=false, width=None))]
+    fn tail(
+        &self,
+        n: usize,
+        sort_by: Option<String>,
+        descending: bool,
+        width: Option<usize>,
+    ) -> PyResult<String> {
+        self.render_display_view(FramePreviewView::Tail, n, sort_by, descending, width)
+    }
+
+    fn info(&self) -> String {
+        render_node_frame_info(self.inner.as_ref())
+    }
+
+    fn schema(&self) -> String {
+        render_frame_schema(
+            "NodeFrame",
+            self.inner.to_record_batch(),
+            &NODE_RESERVED_COLUMNS,
+        )
+    }
+
+    #[pyo3(signature = (n=3, *, sort_by=None, descending=false, width=None))]
+    fn glimpse(
+        &self,
+        n: usize,
+        sort_by: Option<String>,
+        descending: bool,
+        width: Option<usize>,
+    ) -> PyResult<String> {
+        render_frame_glimpse(
+            "NodeFrame",
+            self.inner.to_record_batch(),
+            n.max(1),
+            sort_by,
+            descending,
+            width,
+        )
+    }
+
+    #[pyo3(signature = (mode="all"))]
+    fn describe(&self, mode: &str) -> PyResult<String> {
+        describe_node_frame(self.inner.as_ref(), mode)
     }
 
     fn to_arrow(&self, py: Python<'_>) -> PyResult<PyObject> {
@@ -391,6 +518,14 @@ impl PyEdgeFrame {
 
     fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    fn edge_count(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn node_count(&self) -> usize {
+        self.inner.node_count()
     }
 
     fn is_empty(&self) -> bool {
@@ -459,6 +594,139 @@ impl PyEdgeFrame {
                 })
             })
             .collect()
+    }
+
+    fn in_neighbors(&self, node_id: &str) -> PyResult<Vec<String>> {
+        let Some(node_idx) = self.inner.node_row_idx(node_id) else {
+            return Err(PyKeyError::new_err(format!("node not found: {node_id}")));
+        };
+
+        self.inner
+            .in_neighbors(node_idx)
+            .iter()
+            .map(|&idx| {
+                self.node_ids.get(idx as usize).cloned().ok_or_else(|| {
+                    PyRuntimeError::new_err(format!("invalid local node index: {idx}"))
+                })
+            })
+            .collect()
+    }
+
+    #[pyo3(signature = (node_id, direction="out"))]
+    fn neighbors(&self, node_id: &str, direction: &str) -> PyResult<Vec<String>> {
+        let Some(node_idx) = self.inner.node_row_idx(node_id) else {
+            return Err(PyKeyError::new_err(format!("node not found: {node_id}")));
+        };
+        let direction = python_to_direction(direction)?;
+
+        match direction {
+            Direction::Out => self.out_neighbors(node_id),
+            Direction::In => self.in_neighbors(node_id),
+            Direction::Both | Direction::None => {
+                let mut seen = BTreeSet::new();
+                let mut out = Vec::new();
+                for &idx in self
+                    .inner
+                    .out_neighbors(node_idx)
+                    .iter()
+                    .chain(self.inner.in_neighbors(node_idx).iter())
+                {
+                    let id = self.node_ids.get(idx as usize).ok_or_else(|| {
+                        PyRuntimeError::new_err(format!("invalid local node index: {idx}"))
+                    })?;
+                    if seen.insert(id.clone()) {
+                        out.push(id.clone());
+                    }
+                }
+                Ok(out)
+            }
+        }
+    }
+
+    fn out_degree(&self, node_id: &str) -> PyResult<usize> {
+        let Some(node_idx) = self.inner.node_row_idx(node_id) else {
+            return Err(PyKeyError::new_err(format!("node not found: {node_id}")));
+        };
+        Ok(self.inner.out_degree(node_idx))
+    }
+
+    fn in_degree(&self, node_id: &str) -> PyResult<usize> {
+        let Some(node_idx) = self.inner.node_row_idx(node_id) else {
+            return Err(PyKeyError::new_err(format!("node not found: {node_id}")));
+        };
+        Ok(self.inner.in_degree(node_idx))
+    }
+
+    fn with_nodes(&self, nodes: PyRef<'_, PyNodeFrame>) -> PyResult<PyGraphFrame> {
+        let graph = self
+            .inner
+            .with_nodes((*nodes.inner).clone())
+            .map_err(gf_error_to_py_err)?;
+        Ok(PyGraphFrame::new(graph))
+    }
+
+    fn __repr__(&self) -> String {
+        match self.render_display_view(FramePreviewView::Table, 10, None, false, Some(100)) {
+            Ok(rendered) => rendered,
+            Err(err) => format!("EdgeFrame(<display error: {err}>)"),
+        }
+    }
+
+    #[pyo3(signature = (n=5, *, sort_by=None, descending=false, width=None))]
+    fn head(
+        &self,
+        n: usize,
+        sort_by: Option<String>,
+        descending: bool,
+        width: Option<usize>,
+    ) -> PyResult<String> {
+        self.render_display_view(FramePreviewView::Head, n, sort_by, descending, width)
+    }
+
+    #[pyo3(signature = (n=5, *, sort_by=None, descending=false, width=None))]
+    fn tail(
+        &self,
+        n: usize,
+        sort_by: Option<String>,
+        descending: bool,
+        width: Option<usize>,
+    ) -> PyResult<String> {
+        self.render_display_view(FramePreviewView::Tail, n, sort_by, descending, width)
+    }
+
+    fn info(&self) -> String {
+        render_edge_frame_info(self.inner.as_ref())
+    }
+
+    fn schema(&self) -> String {
+        render_frame_schema(
+            "EdgeFrame",
+            self.inner.to_record_batch(),
+            &EDGE_RESERVED_COLUMNS,
+        )
+    }
+
+    #[pyo3(signature = (n=3, *, sort_by=None, descending=false, width=None))]
+    fn glimpse(
+        &self,
+        n: usize,
+        sort_by: Option<String>,
+        descending: bool,
+        width: Option<usize>,
+    ) -> PyResult<String> {
+        render_frame_glimpse(
+            "EdgeFrame",
+            self.inner.to_record_batch(),
+            n.max(1),
+            sort_by,
+            descending,
+            width,
+        )
+    }
+
+    #[pyo3(signature = (mode="all"))]
+    fn describe(&self, mode: &str) -> PyResult<String> {
+        describe_edge_frame(self.inner.as_ref(), mode)
     }
 
     fn to_arrow(&self, py: Python<'_>) -> PyResult<PyObject> {
@@ -1823,6 +2091,656 @@ fn _lynxes(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("write_gfb", m.getattr("write_gfb_py")?)?;
     m.add("write_parquet_graph", m.getattr("write_parquet_graph_py")?)?;
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum FramePreviewView {
+    Table,
+    Head,
+    Tail,
+}
+
+fn frame_order_name(sorted: bool, descending: bool) -> &'static str {
+    match (sorted, descending) {
+        (false, _) => "Stable",
+        (true, false) => "SortedAsc",
+        (true, true) => "SortedDesc",
+    }
+}
+
+fn render_frame_preview(
+    header: &str,
+    batch: &RecordBatch,
+    view: FramePreviewView,
+    rows: usize,
+    sort_by: Option<String>,
+    descending: bool,
+    width: Option<usize>,
+) -> PyResult<String> {
+    let columns: Vec<String> = batch
+        .schema_ref()
+        .fields()
+        .iter()
+        .map(|field| field.name().to_owned())
+        .collect();
+    let ordered_rows = build_frame_row_order(batch, sort_by.as_deref(), descending)?;
+    let (top_rows, bottom_rows, omitted_rows) = partition_frame_rows(&ordered_rows, view, rows);
+
+    let mut measured_rows = top_rows.clone();
+    measured_rows.extend(bottom_rows.iter().copied());
+    let widths = measure_frame_column_widths(batch, &columns, &measured_rows, width);
+
+    let mut out = String::new();
+    out.push_str(header);
+    out.push('\n');
+    for (column, width) in columns.iter().zip(widths.iter().copied()) {
+        out.push_str(&format!(
+            "{:<width$} ",
+            truncate_display(column, width),
+            width = width
+        ));
+    }
+    out.push('\n');
+    for width in &widths {
+        out.push_str(&format!("{:-<width$} ", "", width = *width));
+    }
+    out.push('\n');
+
+    for row in &top_rows {
+        push_frame_row(&mut out, batch, *row, &widths);
+    }
+    if omitted_rows > 0 {
+        out.push_str(&format!("... {} rows omitted ...\n", omitted_rows));
+    }
+    for row in &bottom_rows {
+        push_frame_row(&mut out, batch, *row, &widths);
+    }
+
+    Ok(out)
+}
+
+fn partition_frame_rows(
+    ordered_rows: &[usize],
+    view: FramePreviewView,
+    max_rows: usize,
+) -> (Vec<usize>, Vec<usize>, usize) {
+    let max_rows = max_rows.max(1);
+    let total = ordered_rows.len();
+    match view {
+        FramePreviewView::Head => {
+            let top = ordered_rows
+                .iter()
+                .take(max_rows)
+                .copied()
+                .collect::<Vec<_>>();
+            let omitted = total.saturating_sub(top.len());
+            (top, Vec::new(), omitted)
+        }
+        FramePreviewView::Tail => {
+            let bottom = ordered_rows
+                .iter()
+                .rev()
+                .take(max_rows)
+                .copied()
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>();
+            let omitted = total.saturating_sub(bottom.len());
+            (Vec::new(), bottom, omitted)
+        }
+        FramePreviewView::Table => {
+            if total <= max_rows {
+                (ordered_rows.to_vec(), Vec::new(), 0)
+            } else {
+                let top_len = max_rows / 2;
+                let bottom_len = max_rows - top_len;
+                let top = ordered_rows
+                    .iter()
+                    .take(top_len)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let bottom = ordered_rows
+                    .iter()
+                    .rev()
+                    .take(bottom_len)
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>();
+                let omitted = total.saturating_sub(top.len() + bottom.len());
+                (top, bottom, omitted)
+            }
+        }
+    }
+}
+
+fn build_frame_row_order(
+    batch: &RecordBatch,
+    sort_by: Option<&str>,
+    descending: bool,
+) -> PyResult<Vec<usize>> {
+    let mut rows: Vec<usize> = (0..batch.num_rows()).collect();
+    let Some(sort_by) = sort_by else {
+        return Ok(rows);
+    };
+
+    let column_idx = batch
+        .schema_ref()
+        .index_of(sort_by)
+        .map_err(|_| PyKeyError::new_err(format!("column not found: {sort_by}")))?;
+    let column = batch.column(column_idx);
+    rows.sort_by(|a, b| {
+        compare_frame_cells(column.as_ref(), *a, *b, descending).then_with(|| a.cmp(b))
+    });
+    Ok(rows)
+}
+
+fn compare_frame_cells(array: &dyn Array, a: usize, b: usize, descending: bool) -> Ordering {
+    let ord = match array.data_type() {
+        DataType::Utf8 => {
+            let values = array
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("Utf8 array downcasts to StringArray");
+            compare_nullable(array, a, b, || values.value(a).cmp(values.value(b)))
+        }
+        DataType::Boolean => {
+            let values = array
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .expect("Boolean array downcasts to BooleanArray");
+            compare_nullable(array, a, b, || values.value(a).cmp(&values.value(b)))
+        }
+        DataType::Int8 => {
+            let values = array
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .expect("Int8 array downcasts to Int8Array");
+            compare_nullable(array, a, b, || values.value(a).cmp(&values.value(b)))
+        }
+        DataType::Int16 => {
+            let values = array
+                .as_any()
+                .downcast_ref::<Int16Array>()
+                .expect("Int16 array downcasts to Int16Array");
+            compare_nullable(array, a, b, || values.value(a).cmp(&values.value(b)))
+        }
+        DataType::Int32 => {
+            let values = array
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .expect("Int32 array downcasts to Int32Array");
+            compare_nullable(array, a, b, || values.value(a).cmp(&values.value(b)))
+        }
+        DataType::Int64 => {
+            let values = array
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("Int64 array downcasts to Int64Array");
+            compare_nullable(array, a, b, || values.value(a).cmp(&values.value(b)))
+        }
+        DataType::UInt32 => {
+            let values = array
+                .as_any()
+                .downcast_ref::<UInt32Array>()
+                .expect("UInt32 array downcasts to UInt32Array");
+            compare_nullable(array, a, b, || values.value(a).cmp(&values.value(b)))
+        }
+        DataType::UInt64 => {
+            let values = array
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .expect("UInt64 array downcasts to UInt64Array");
+            compare_nullable(array, a, b, || values.value(a).cmp(&values.value(b)))
+        }
+        DataType::Float32 => {
+            let values = array
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .expect("Float32 array downcasts to Float32Array");
+            compare_nullable(array, a, b, || values.value(a).total_cmp(&values.value(b)))
+        }
+        DataType::Float64 => {
+            let values = array
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .expect("Float64 array downcasts to Float64Array");
+            compare_nullable(array, a, b, || values.value(a).total_cmp(&values.value(b)))
+        }
+        _ => compare_nullable(array, a, b, || {
+            render_frame_cell(array, a).cmp(&render_frame_cell(array, b))
+        }),
+    };
+
+    if descending {
+        ord.reverse()
+    } else {
+        ord
+    }
+}
+
+fn compare_nullable<F>(array: &dyn Array, a: usize, b: usize, cmp_values: F) -> Ordering
+where
+    F: FnOnce() -> Ordering,
+{
+    match (array.is_null(a), array.is_null(b)) {
+        (true, true) => Ordering::Equal,
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        (false, false) => cmp_values(),
+    }
+}
+
+fn measure_frame_column_widths(
+    batch: &RecordBatch,
+    columns: &[String],
+    rows: &[usize],
+    width: Option<usize>,
+) -> Vec<usize> {
+    let mut widths = columns
+        .iter()
+        .map(|name| name.chars().count())
+        .collect::<Vec<_>>();
+    for &row in rows {
+        for (idx, column) in batch.columns().iter().enumerate() {
+            widths[idx] = widths[idx].max(render_frame_cell(column.as_ref(), row).chars().count());
+        }
+    }
+
+    if let Some(total_width) = width {
+        let usable = total_width.saturating_sub(columns.len());
+        let per_column_cap = (usable / columns.len().max(1)).max(4);
+        for measured in &mut widths {
+            *measured = (*measured).min(per_column_cap);
+        }
+    }
+
+    widths
+}
+
+fn push_frame_row(out: &mut String, batch: &RecordBatch, row: usize, widths: &[usize]) {
+    for (column, width) in batch.columns().iter().zip(widths.iter().copied()) {
+        out.push_str(&format!(
+            "{:<width$} ",
+            truncate_display(&render_frame_cell(column.as_ref(), row), width),
+            width = width
+        ));
+    }
+    out.push('\n');
+}
+
+fn truncate_display(value: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let chars = value.chars().collect::<Vec<_>>();
+    if chars.len() <= width {
+        return value.to_owned();
+    }
+    if width == 1 {
+        return "…".to_owned();
+    }
+    chars[..width - 1].iter().collect::<String>() + "…"
+}
+
+fn render_frame_cell(array: &dyn Array, row: usize) -> String {
+    if array.is_null(row) {
+        return "-".to_owned();
+    }
+    arrow::util::display::array_value_to_string(array, row)
+        .unwrap_or_else(|_| "<invalid>".to_owned())
+        .replace('\n', "\\n")
+}
+
+fn render_node_frame_info(frame: &NodeFrame) -> String {
+    let batch = frame.to_record_batch();
+    let labels = collect_node_labels(batch);
+    let user_columns = frame_user_columns(batch, &NODE_RESERVED_COLUMNS);
+
+    let mut out = String::new();
+    out.push_str("NodeFrame info\n");
+    out.push_str(&format!("  rows: {}\n", frame.len()));
+    out.push_str(&format!("  columns: {}\n", batch.num_columns()));
+    out.push_str(&format!(
+        "  reserved columns: {}\n",
+        NODE_RESERVED_COLUMNS.join(", ")
+    ));
+    out.push_str(&format!(
+        "  labels: {}\n",
+        if labels.is_empty() {
+            "(none)".to_owned()
+        } else {
+            labels.join(", ")
+        }
+    ));
+    out.push_str(&format!(
+        "  user columns: {}\n",
+        if user_columns.is_empty() {
+            "(none)".to_owned()
+        } else {
+            user_columns.join(", ")
+        }
+    ));
+    out
+}
+
+fn render_edge_frame_info(frame: &EdgeFrame) -> String {
+    let batch = frame.to_record_batch();
+    let mut edge_types = frame
+        .edge_types()
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    edge_types.sort();
+    let user_columns = frame_user_columns(batch, &EDGE_RESERVED_COLUMNS);
+
+    let mut out = String::new();
+    out.push_str("EdgeFrame info\n");
+    out.push_str(&format!("  rows: {}\n", frame.len()));
+    out.push_str(&format!("  columns: {}\n", batch.num_columns()));
+    out.push_str(&format!("  unique node ids: {}\n", frame.node_count()));
+    out.push_str(&format!(
+        "  edge types: {}\n",
+        if edge_types.is_empty() {
+            "(none)".to_owned()
+        } else {
+            edge_types.join(", ")
+        }
+    ));
+    out.push_str(&format!(
+        "  user columns: {}\n",
+        if user_columns.is_empty() {
+            "(none)".to_owned()
+        } else {
+            user_columns.join(", ")
+        }
+    ));
+    out
+}
+
+fn render_frame_schema(kind: &str, batch: &RecordBatch, reserved: &[&str]) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("{kind} schema\n"));
+    for field in batch.schema_ref().fields() {
+        out.push_str(&format!(
+            "  {:<14} {:<24} {:<8} {}\n",
+            field.name(),
+            field.data_type(),
+            if field.is_nullable() {
+                "nullable"
+            } else {
+                "required"
+            },
+            if reserved.contains(&field.name().as_str()) {
+                "reserved"
+            } else {
+                "user"
+            }
+        ));
+    }
+    out
+}
+
+fn render_frame_glimpse(
+    kind: &str,
+    batch: &RecordBatch,
+    rows: usize,
+    sort_by: Option<String>,
+    descending: bool,
+    width: Option<usize>,
+) -> PyResult<String> {
+    let ordered_rows = build_frame_row_order(batch, sort_by.as_deref(), descending)?;
+    let sampled_rows = ordered_rows
+        .into_iter()
+        .take(rows.max(1))
+        .collect::<Vec<_>>();
+    let sample_width = width.map(|w| (w / 3).max(8));
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{kind} glimpse (rows sampled: {})\n",
+        sampled_rows.len()
+    ));
+    for (field, column) in batch.schema_ref().fields().iter().zip(batch.columns()) {
+        let samples = sampled_rows
+            .iter()
+            .map(|row| render_frame_cell(column.as_ref(), *row))
+            .map(|value| {
+                sample_width
+                    .map(|limit| truncate_display(&value, limit))
+                    .unwrap_or(value)
+            })
+            .collect::<Vec<_>>();
+        out.push_str(&format!(
+            "  {:<12} {:<18} {}\n",
+            field.name(),
+            field.data_type(),
+            if samples.is_empty() {
+                "-".to_owned()
+            } else {
+                samples.join(" | ")
+            }
+        ));
+    }
+    Ok(out)
+}
+
+fn describe_node_frame(frame: &NodeFrame, mode: &str) -> PyResult<String> {
+    match mode {
+        "all" => {
+            let mut out = String::new();
+            out.push_str(&describe_node_frame(frame, "types")?);
+            out.push('\n');
+            out.push_str(&describe_node_frame(frame, "attrs")?);
+            out.push('\n');
+            out.push_str(&describe_node_frame(frame, "structure")?);
+            Ok(out)
+        }
+        "types" => Ok(render_node_frame_types(frame)),
+        "attrs" => Ok(render_frame_attr_describe(
+            "node",
+            frame.to_record_batch(),
+            &NODE_RESERVED_COLUMNS,
+        )),
+        "structure" => Ok(render_node_frame_structure(frame)),
+        other => Err(PyValueError::new_err(format!(
+            "unsupported describe mode: {other}; expected one of: all, types, attrs, structure"
+        ))),
+    }
+}
+
+fn describe_edge_frame(frame: &EdgeFrame, mode: &str) -> PyResult<String> {
+    match mode {
+        "all" => {
+            let mut out = String::new();
+            out.push_str(&describe_edge_frame(frame, "types")?);
+            out.push('\n');
+            out.push_str(&describe_edge_frame(frame, "attrs")?);
+            out.push('\n');
+            out.push_str(&describe_edge_frame(frame, "structure")?);
+            Ok(out)
+        }
+        "types" => Ok(render_edge_frame_types(frame)),
+        "attrs" => Ok(render_frame_attr_describe(
+            "edge",
+            frame.to_record_batch(),
+            &EDGE_RESERVED_COLUMNS,
+        )),
+        "structure" => Ok(render_edge_frame_structure(frame)),
+        other => Err(PyValueError::new_err(format!(
+            "unsupported describe mode: {other}; expected one of: all, types, attrs, structure"
+        ))),
+    }
+}
+
+fn render_node_frame_types(frame: &NodeFrame) -> String {
+    let labels = collect_node_labels(frame.to_record_batch());
+    let mut out = String::new();
+    out.push_str("Types\n");
+    out.push_str(&format!(
+        "  labels: {}\n",
+        if labels.is_empty() {
+            "(none)".to_owned()
+        } else {
+            labels.join(", ")
+        }
+    ));
+    out.push_str("  fields\n");
+    for field in frame.to_record_batch().schema_ref().fields() {
+        out.push_str(&format!("    {:<14} {}\n", field.name(), field.data_type()));
+    }
+    out
+}
+
+fn render_edge_frame_types(frame: &EdgeFrame) -> String {
+    let mut edge_types = frame
+        .edge_types()
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    edge_types.sort();
+    let mut out = String::new();
+    out.push_str("Types\n");
+    out.push_str(&format!(
+        "  edge types: {}\n",
+        if edge_types.is_empty() {
+            "(none)".to_owned()
+        } else {
+            edge_types.join(", ")
+        }
+    ));
+    out.push_str("  fields\n");
+    for field in frame.to_record_batch().schema_ref().fields() {
+        out.push_str(&format!("    {:<14} {}\n", field.name(), field.data_type()));
+    }
+    out
+}
+
+fn render_node_frame_structure(frame: &NodeFrame) -> String {
+    let labels = collect_node_labels(frame.to_record_batch());
+    let mut out = String::new();
+    out.push_str("Structure\n");
+    out.push_str(&format!("  rows: {}\n", frame.len()));
+    out.push_str(&format!(
+        "  columns: {}\n",
+        frame.to_record_batch().num_columns()
+    ));
+    out.push_str(&format!("  distinct labels: {}\n", labels.len()));
+    out
+}
+
+fn render_edge_frame_structure(frame: &EdgeFrame) -> String {
+    let mut edge_types = frame
+        .edge_types()
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    edge_types.sort();
+    let mut out = String::new();
+    out.push_str("Structure\n");
+    out.push_str(&format!("  rows: {}\n", frame.len()));
+    out.push_str(&format!(
+        "  columns: {}\n",
+        frame.to_record_batch().num_columns()
+    ));
+    out.push_str(&format!("  unique node ids: {}\n", frame.node_count()));
+    out.push_str(&format!("  edge type count: {}\n", edge_types.len()));
+    out
+}
+
+fn render_frame_attr_describe(kind: &str, batch: &RecordBatch, reserved: &[&str]) -> String {
+    let user_fields = batch
+        .schema_ref()
+        .fields()
+        .iter()
+        .filter(|field| !reserved.contains(&field.name().as_str()))
+        .collect::<Vec<_>>();
+
+    let mut out = String::new();
+    out.push_str("Attributes\n");
+    if user_fields.is_empty() {
+        out.push_str(&format!("  {kind}: (none)\n"));
+        return out;
+    }
+
+    out.push_str(&format!("  {kind}\n"));
+    for field in user_fields {
+        let column = batch
+            .column_by_name(field.name())
+            .expect("field present in record batch");
+        let mut non_null_count = 0usize;
+        let mut null_count = 0usize;
+        let mut distinct = BTreeSet::new();
+        let mut samples = Vec::new();
+
+        for row in 0..batch.num_rows() {
+            if column.is_null(row) {
+                null_count += 1;
+                continue;
+            }
+            non_null_count += 1;
+            let value = render_frame_cell(column.as_ref(), row);
+            distinct.insert(value.clone());
+            if samples.len() < 3 && !samples.contains(&value) {
+                samples.push(value);
+            }
+        }
+
+        out.push_str(&format!(
+            "    {:<18} {:<16} non-null={} null={} distinct={} samples={}\n",
+            format!("{kind}.{}", field.name()),
+            field.data_type(),
+            non_null_count,
+            null_count,
+            distinct.len(),
+            if samples.is_empty() {
+                "-".to_owned()
+            } else {
+                samples.join(" | ")
+            }
+        ));
+    }
+    out
+}
+
+fn frame_user_columns(batch: &RecordBatch, reserved: &[&str]) -> Vec<String> {
+    batch
+        .schema_ref()
+        .fields()
+        .iter()
+        .map(|field| field.name().to_owned())
+        .filter(|name| !reserved.contains(&name.as_str()))
+        .collect()
+}
+
+fn collect_node_labels(batch: &RecordBatch) -> Vec<String> {
+    let Some(column) = batch.column_by_name(COL_NODE_LABEL) else {
+        return Vec::new();
+    };
+    let Some(labels) = column.as_any().downcast_ref::<ListArray>() else {
+        return Vec::new();
+    };
+
+    let mut values = BTreeSet::new();
+    for row in 0..labels.len() {
+        if labels.is_null(row) {
+            continue;
+        }
+        let item = labels.value(row);
+        let Some(strings) = item.as_any().downcast_ref::<StringArray>() else {
+            continue;
+        };
+        for idx in 0..strings.len() {
+            if strings.is_null(idx) {
+                continue;
+            }
+            values.insert(strings.value(idx).to_owned());
+        }
+    }
+
+    values.into_iter().collect()
 }
 
 fn render_python_display_slice(slice: &DisplaySlice) -> String {

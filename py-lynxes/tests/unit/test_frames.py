@@ -69,6 +69,13 @@ class TestNodeFrameSetOps:
         assert isinstance(gathered, pa.RecordBatch)
         assert gathered["_id"].to_pylist() == expected_ids
 
+    def test_with_edges_rehydrates_graph(self, graph):
+        rebuilt = graph.nodes().with_edges(graph.edges())
+
+        assert type(rebuilt).__name__ == "GraphFrame"
+        assert rebuilt.node_count() == graph.node_count()
+        assert rebuilt.edge_count() == graph.edge_count()
+
 
 class TestGraphFrameGnnBridge:
     def test_graph_from_dicts_creates_graph_in_one_call(self):
@@ -148,6 +155,30 @@ class TestGraphFrameGnnBridge:
 
         assert len(walks) == 2
         assert all(walk == [2, 1] for walk in walks)
+
+    def test_edgeframe_with_nodes_rehydrates_graph(self, graph):
+        rebuilt = graph.edges().with_nodes(graph.nodes())
+
+        assert type(rebuilt).__name__ == "GraphFrame"
+        assert rebuilt.node_count() == graph.node_count()
+        assert rebuilt.edge_count() == graph.edge_count()
+
+    def test_edgeframe_neighbors_and_degree_helpers(self, graph):
+        edges = graph.edges()
+
+        assert set(edges.out_neighbors("alice")) == {"bob", "diana"}
+        assert set(edges.in_neighbors("charlie")) == {"bob"}
+        assert set(edges.neighbors("alice", "both")) == {"bob", "diana"}
+        assert edges.out_degree("alice") == 2
+        assert edges.in_degree("charlie") == 1
+
+    def test_edgeframe_count_aliases(self, graph):
+        edges = graph.edges()
+        nodes = graph.nodes()
+
+        assert edges.edge_count() == graph.edge_count()
+        assert edges.node_count() >= 1
+        assert nodes.node_count() == graph.node_count()
 
 
 class TestPartitionedGraph:

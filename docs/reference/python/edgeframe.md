@@ -20,14 +20,22 @@
 
 - `EdgeFrame.from_dict({...})`
 - `len()`
+- `edge_count()` / `node_count()`
 - `is_empty()`
 - `column_names()`
+- `head(...)` / `tail(...)`
+- `glimpse(...)`
+- `info()` / `schema()` / `describe(...)`
+- `out_neighbors(node_id)` / `in_neighbors(node_id)`
+- `neighbors(node_id, direction=...)`
+- `out_degree(node_id)` / `in_degree(node_id)`
+- `with_nodes(nodes)`
 - `to_pyarrow()`
 
 ## Practical Note
 
 Although an edge result looks tabular at the API boundary, Lynxes still treats graph structure as first-class internally.
-Use `EdgeFrame` for inspection and export, not as a replacement for graph traversal semantics.
+Use `EdgeFrame` for inspection, export, and CSR-backed local neighborhood lookups. If you need graph-global algorithms, rehydrate a `GraphFrame` with `with_nodes(nodes)`.
 
 If you are creating an edge frame from Python data, `from_dict({...})` is the shortest constructor path. `from_arrow(...)` is still useful when Arrow batches already exist upstream.
 
@@ -37,6 +45,7 @@ If you are creating an edge frame from Python data, `from_dict({...})` is the sh
 import lynxes as lx
 
 g = lx.read_gf("examples/data/example_simple.gf")
-ef = g.lazy().filter_edges(lx.col("_type") == "KNOWS").collect_edges()
-print(ef.column_names())
+ef = g.edges()
+print(ef.head(5))
+print(ef.out_neighbors("alice"))
 ```

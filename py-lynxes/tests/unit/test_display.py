@@ -35,3 +35,23 @@ class TestDisplay:
         assert "Attributes" in rendered
         assert "distinct=" in rendered
         assert "node.age" in rendered
+
+    def test_nodeframe_display_helpers_render_algorithm_output(self, graph):
+        ranks = graph.pagerank()
+
+        assert "NodeFrame(rows=" in repr(ranks)
+        assert "pagerank" in ranks.head(3, sort_by="pagerank", descending=True)
+        assert "NodeFrame info" in ranks.info()
+        assert "NodeFrame schema" in ranks.schema()
+        assert "NodeFrame glimpse" in ranks.glimpse(2)
+        assert "Attributes" in ranks.describe("attrs")
+
+    def test_edgeframe_display_helpers_render_preview(self, graph):
+        edges = graph.edges()
+
+        assert "EdgeFrame(rows=" in repr(edges)
+        assert "_src" in edges.head(2)
+        assert "EdgeFrame info" in edges.info()
+        assert "EdgeFrame schema" in edges.schema()
+        assert "EdgeFrame glimpse" in edges.glimpse(2)
+        assert "Structure" in edges.describe("structure")

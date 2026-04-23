@@ -79,7 +79,7 @@ You can also run ranking-style algorithms:
 
 ```python
 ranks = g.pagerank()
-print(ranks.column_names())
+print(ranks.head(5, sort_by="pagerank", descending=True))
 ```
 
 ## 5. Inspect Results as Arrow

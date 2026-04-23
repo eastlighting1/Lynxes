@@ -3,7 +3,10 @@ use std::sync::Arc;
 use arrow_array::builder::{ListBuilder, StringBuilder};
 use arrow_array::{Array, ArrayRef, BooleanArray, Int64Array, ListArray, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
-use lynxes_core::{GFError, NodeFrame, COL_NODE_ID, COL_NODE_LABEL};
+use lynxes_core::{
+    EdgeFrame, GFError, NodeFrame, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC, COL_EDGE_TYPE,
+    COL_NODE_ID, COL_NODE_LABEL,
+};
 
 fn labels_array(values: &[&[&str]]) -> ListArray {
     let value_builder = StringBuilder::new();
@@ -367,4 +370,45 @@ fn intersect_returns_common_ids() {
     let result = a.intersect(&b).unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result.row_index("bob"), Some(0));
+}
+
+#[test]
+fn with_edges_rehydrates_valid_graph() {
+    let nodes = NodeFrame::from_record_batch(
+        RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(vec![
+                Field::new(COL_NODE_ID, DataType::Utf8, false),
+                label_field(),
+            ])),
+            vec![
+                Arc::new(StringArray::from(vec!["alice", "bob"])) as ArrayRef,
+                Arc::new(labels_array(&[&["Person"], &["Person"]])) as ArrayRef,
+            ],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let edges = EdgeFrame::from_record_batch(
+        RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(vec![
+                Field::new(COL_EDGE_SRC, DataType::Utf8, false),
+                Field::new(COL_EDGE_DST, DataType::Utf8, false),
+                Field::new(COL_EDGE_TYPE, DataType::Utf8, false),
+                Field::new(COL_EDGE_DIRECTION, DataType::Int8, false),
+            ])),
+            vec![
+                Arc::new(StringArray::from(vec!["alice"])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["bob"])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["KNOWS"])) as ArrayRef,
+                Arc::new(arrow_array::Int8Array::from(vec![0i8])) as ArrayRef,
+            ],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    let graph = nodes.with_edges(edges).unwrap();
+
+    assert_eq!(graph.node_count(), 2);
+    assert_eq!(graph.edge_count(), 1);
 }

@@ -6,17 +6,8 @@ This section documents the file and graph-shape conventions Lynxes expects when 
 
 - [Reserved graph columns](reserved-columns.md)
 - [`.gf` format](gf.md)
-- [`.gf` authoring guide](../../gf_authoring_guide.md)
 - [`.gfb` format](gfb.md)
 - [Parquet graph shape](parquet-interop.md)
-
-## How The `.gf` Pages Fit Together
-
-The `.gf` material now lives in two companion pages because they serve different jobs.
-
-Use [`.gf` format](gf.md) when you want the compact reference version: accepted edge forms, property placement, and validation-oriented reminders.
-
-Use [`.gf` authoring guide](../../gf_authoring_guide.md) when you are actually writing a file from scratch and want the broader authoring flow, schema examples, metadata blocks, supported literal types, and style guidance in one place.
 
 ## Scope
 

@@ -1,4 +1,4 @@
-import init, { inspect_gfb_bytes, wasm_version } from "../pkg/graphframe_core.js";
+import init, { inspect_gfb_bytes, wasm_version } from "./pkg/lynxes_wasm.js";
 
 const versionEl = document.getElementById("version");
 const fileEl = document.getElementById("file");
@@ -25,7 +25,7 @@ function renderSummary(info) {
 
 async function main() {
   await init();
-  versionEl.textContent = `WASM ready: Graphframe ${wasm_version()}`;
+  versionEl.textContent = `WASM ready: Lynxes ${wasm_version()}`;
 
   fileEl.addEventListener("change", async (event) => {
     const [file] = event.target.files ?? [];

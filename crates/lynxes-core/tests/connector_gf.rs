@@ -152,7 +152,7 @@ async fn gf_connector_rejects_non_gfb_write_targets() {
 fn temp_path(name: &str) -> PathBuf {
     let pid = std::process::id();
     match name.rsplit_once('.') {
-        Some((stem, ext)) => std::env::temp_dir().join(format!("graphframe-{stem}-{pid}.{ext}")),
-        None => std::env::temp_dir().join(format!("graphframe-{name}-{pid}")),
+        Some((stem, ext)) => std::env::temp_dir().join(format!("lynxes-{stem}-{pid}.{ext}")),
+        None => std::env::temp_dir().join(format!("lynxes-{name}-{pid}")),
     }
 }

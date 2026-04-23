@@ -79,7 +79,7 @@ fn demo_graph() -> GraphFrame {
 fn read_gfb_streaming_yields_one_graph_then_ends() {
     let graph = demo_graph();
     let path = std::env::temp_dir().join(format!(
-        "graphframe-adv006-stream-{}.gfb",
+        "lynxes-adv006-stream-{}.gfb",
         std::process::id()
     ));
     write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
@@ -108,7 +108,7 @@ fn read_gfb_streaming_yields_one_graph_then_ends() {
 fn read_gfb_streaming_with_projection_uses_same_options_contract() {
     let graph = demo_graph();
     let path = std::env::temp_dir().join(format!(
-        "graphframe-adv006-stream-proj-{}.gfb",
+        "lynxes-adv006-stream-proj-{}.gfb",
         std::process::id()
     ));
     write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();

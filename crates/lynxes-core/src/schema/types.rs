@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{GFError, Result};
 
-/// Canonical Graphframe type surface used by schema declarations.
+/// Canonical Lynxes type surface used by schema declarations.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GFType {
     String,

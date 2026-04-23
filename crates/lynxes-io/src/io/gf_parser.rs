@@ -9,8 +9,8 @@ use lynxes_core::{
 };
 
 #[derive(Parser)]
-#[grammar = "io/graphframe.pest"]
-struct GraphframeParser;
+#[grammar = "io/gf.pest"]
+struct GfParser;
 
 /// Parsed node declaration from a `.gf` document.
 #[derive(Debug, Clone, PartialEq)]
@@ -41,7 +41,7 @@ pub struct ParsedGfDocument {
 }
 
 pub fn parse_gf(source: &str) -> Result<ParsedGfDocument> {
-    let mut pairs = GraphframeParser::parse(Rule::file, source).map_err(parse_error)?;
+    let mut pairs = GfParser::parse(Rule::file, source).map_err(parse_error)?;
     let file = pairs.next().ok_or_else(|| GFError::ParseError {
         message: "missing file root".to_owned(),
     })?;

@@ -77,11 +77,11 @@ fn demo_graph() -> GraphFrame {
 fn write_and_read_parquet_graph_round_trip() {
     let graph = demo_graph();
     let node_path = std::env::temp_dir().join(format!(
-        "graphframe-ser007-nodes-{}.parquet",
+        "lynxes-ser007-nodes-{}.parquet",
         std::process::id()
     ));
     let edge_path = std::env::temp_dir().join(format!(
-        "graphframe-ser007-edges-{}.parquet",
+        "lynxes-ser007-edges-{}.parquet",
         std::process::id()
     ));
 
@@ -100,11 +100,11 @@ fn write_and_read_parquet_graph_round_trip() {
 fn read_parquet_graph_supports_projection() {
     let graph = demo_graph();
     let node_path = std::env::temp_dir().join(format!(
-        "graphframe-ser007-proj-nodes-{}.parquet",
+        "lynxes-ser007-proj-nodes-{}.parquet",
         std::process::id()
     ));
     let edge_path = std::env::temp_dir().join(format!(
-        "graphframe-ser007-proj-edges-{}.parquet",
+        "lynxes-ser007-proj-edges-{}.parquet",
         std::process::id()
     ));
 
@@ -141,11 +141,11 @@ fn read_parquet_graph_supports_projection() {
 fn read_parquet_graph_rejects_unknown_projection_column() {
     let graph = demo_graph();
     let node_path = std::env::temp_dir().join(format!(
-        "graphframe-ser007-badproj-nodes-{}.parquet",
+        "lynxes-ser007-badproj-nodes-{}.parquet",
         std::process::id()
     ));
     let edge_path = std::env::temp_dir().join(format!(
-        "graphframe-ser007-badproj-edges-{}.parquet",
+        "lynxes-ser007-badproj-edges-{}.parquet",
         std::process::id()
     ));
 

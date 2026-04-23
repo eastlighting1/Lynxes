@@ -1,4 +1,4 @@
-//! Core Rust engine for Graphframe.
+//! Core Rust engine for Lynxes.
 
 mod algo;
 mod connector;

@@ -3370,7 +3370,7 @@ fn scalar_type_tag(value: &ScalarValue) -> &'static str {
 fn extract_dtype(dtype: &Bound<'_, PyAny>) -> PyResult<DataType> {
     let dtype = dtype
         .extract::<String>()
-        .map_err(|_| PyTypeError::new_err("dtype must be a Graphframe dtype marker or string"))?;
+        .map_err(|_| PyTypeError::new_err("dtype must be a Lynxes dtype marker or string"))?;
 
     match dtype.as_str() {
         "String" => Ok(DataType::Utf8),
@@ -3958,7 +3958,7 @@ fn write_gf_impl(graph: &GraphFrame, path: &PathBuf) -> PyResult<()> {
 
 fn unsupported_write_impl(method: &str, path: &Path) -> PyResult<()> {
     Err(PyNotImplementedError::new_err(format!(
-        "{method} is not implemented in graphframe-core yet (requested path: {})",
+        "{method} is not implemented in lynxes-core yet (requested path: {})",
         path.display()
     )))
 }

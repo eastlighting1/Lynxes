@@ -29,7 +29,7 @@ pub enum PartitionStrategy {
     PatternRoots,
 }
 
-/// Canonical lazy plan tree for Graphframe query execution.
+/// Canonical lazy plan tree for Lynxes query execution.
 ///
 /// In v0.1 this is a pure tree: every non-`Scan` node has exactly one input.
 #[derive(Debug, Clone)]

@@ -239,7 +239,7 @@ impl FlightConnector {
 
     async fn put_batch(&self, dataset: FlightDataset, batch: RecordBatch) -> Result<()> {
         let descriptor = FlightDescriptor::new_path(vec![
-            "graphframe".to_owned(),
+            "lynxes".to_owned(),
             self.config.graph_name.clone(),
             dataset.as_str().to_owned(),
         ]);
@@ -756,7 +756,7 @@ impl FlightGraphService {
             FlightDataset::Edges => graph.edges().to_record_batch(),
         };
         let descriptor = FlightDescriptor::new_path(vec![
-            "graphframe".to_owned(),
+            "lynxes".to_owned(),
             graph_name.to_owned(),
             dataset.as_str().to_owned(),
         ]);
@@ -923,10 +923,10 @@ fn parse_descriptor(
 ) -> std::result::Result<(String, FlightDataset), Status> {
     if descriptor.r#type() != DescriptorType::Path {
         return Err(Status::invalid_argument(
-            "Flight descriptor must use path form for graphframe service",
+            "Flight descriptor must use path form for lynxes service",
         ));
     }
-    if descriptor.path.len() != 3 || descriptor.path[0] != "graphframe" {
+    if descriptor.path.len() != 3 || descriptor.path[0] != "lynxes" {
         return Err(Status::invalid_argument(format!(
             "invalid Flight descriptor path {:?}",
             descriptor.path

@@ -147,7 +147,7 @@ impl GraphFrame {
 
     /// Computes normalized betweenness centrality with optional edge weights.
     ///
-    /// For `weight_col = None`, Graphframe uses the unweighted Brandes BFS
+    /// For `weight_col = None`, Lynxes uses the unweighted Brandes BFS
     /// kernel. When a weight column is configured, it switches to weighted
     /// Brandes with per-source Dijkstra exploration. Source-node traversals are
     /// parallelized with Rayon.

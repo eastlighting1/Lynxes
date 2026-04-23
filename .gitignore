@@ -36,6 +36,10 @@ __pycache__/
 target/
 target-*/
 
+# wasm-pack output
+pkg/
+www/pkg/
+
 # Python virtualenv / test cache
 .venv/
 .pytest_cache/

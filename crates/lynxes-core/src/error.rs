@@ -101,7 +101,7 @@ impl std::fmt::Display for SchemaValidationError {
     }
 }
 
-/// Canonical library error surface for Graphframe.
+/// Canonical library error surface for Lynxes.
 #[derive(Debug, thiserror::Error)]
 pub enum GFError {
     #[error("missing reserved column: {column}")]

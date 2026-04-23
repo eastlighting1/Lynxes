@@ -145,7 +145,7 @@ impl GraphFrame {
     /// [`shortest_path`](Self::shortest_path), so callers can use one entry
     /// point for both Dijkstra and A*.
     ///
-    /// The heuristic must return finite, non-negative estimates. Graphframe
+    /// The heuristic must return finite, non-negative estimates. Lynxes
     /// does not attempt to prove admissibility; correctness relative to
     /// Dijkstra is guaranteed only when the heuristic is admissible.
     #[allow(clippy::type_complexity)]

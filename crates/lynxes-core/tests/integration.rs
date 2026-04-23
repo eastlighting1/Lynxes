@@ -168,7 +168,7 @@ fn lazy_chain_filter_sort_limit_collect_edges() {
 #[test]
 fn gfb_write_read_round_trip_preserves_structure() {
     let graph = demo_graph();
-    let path = std::env::temp_dir().join(format!("graphframe-e2e-{}.gfb", std::process::id()));
+    let path = std::env::temp_dir().join(format!("lynxes-e2e-{}.gfb", std::process::id()));
 
     write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
     let decoded = read_gfb(&path).unwrap();
@@ -184,7 +184,7 @@ fn gfb_write_read_round_trip_preserves_structure() {
 #[test]
 fn gfb_read_with_node_column_projection() {
     let graph = demo_graph();
-    let path = std::env::temp_dir().join(format!("graphframe-e2e-proj-{}.gfb", std::process::id()));
+    let path = std::env::temp_dir().join(format!("lynxes-e2e-proj-{}.gfb", std::process::id()));
 
     write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
     let decoded = read_gfb_with_options(

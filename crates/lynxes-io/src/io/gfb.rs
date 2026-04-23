@@ -777,7 +777,7 @@ mod tests {
     fn write_gfb_emits_expected_envelope_and_footer() {
         let graph = demo_graph();
         let path =
-            std::env::temp_dir().join(format!("graphframe-ser005-{}.gfb", std::process::id()));
+            std::env::temp_dir().join(format!("lynxes-ser005-{}.gfb", std::process::id()));
 
         write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
         let bytes = fs::read(&path).unwrap();
@@ -803,7 +803,7 @@ mod tests {
     fn write_gfb_stores_header_and_index_metadata() {
         let graph = demo_graph();
         let path = std::env::temp_dir().join(format!(
-            "graphframe-ser005-header-{}.gfb",
+            "lynxes-ser005-header-{}.gfb",
             std::process::id()
         ));
 
@@ -837,7 +837,7 @@ mod tests {
     fn write_gfb_embeds_arrow_ipc_payloads() {
         let graph = demo_graph();
         let path =
-            std::env::temp_dir().join(format!("graphframe-ser005-ipc-{}.gfb", std::process::id()));
+            std::env::temp_dir().join(format!("lynxes-ser005-ipc-{}.gfb", std::process::id()));
 
         write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
         let bytes = fs::read(&path).unwrap();
@@ -864,7 +864,7 @@ mod tests {
     fn write_gfb_supports_lz4_compression() {
         let graph = demo_graph();
         let path =
-            std::env::temp_dir().join(format!("graphframe-ser005-lz4-{}.gfb", std::process::id()));
+            std::env::temp_dir().join(format!("lynxes-ser005-lz4-{}.gfb", std::process::id()));
 
         write_gfb(
             &graph,
@@ -898,7 +898,7 @@ mod tests {
     fn read_gfb_round_trips_written_graph() {
         let graph = demo_graph();
         let path = std::env::temp_dir().join(format!(
-            "graphframe-ser006-roundtrip-{}.gfb",
+            "lynxes-ser006-roundtrip-{}.gfb",
             std::process::id()
         ));
 
@@ -916,7 +916,7 @@ mod tests {
     fn read_gfb_supports_post_decode_projection() {
         let graph = demo_graph();
         let path = std::env::temp_dir().join(format!(
-            "graphframe-ser006-projection-{}.gfb",
+            "lynxes-ser006-projection-{}.gfb",
             std::process::id()
         ));
 
@@ -950,7 +950,7 @@ mod tests {
     #[test]
     fn read_gfb_rejects_invalid_magic() {
         let path = std::env::temp_dir().join(format!(
-            "graphframe-ser006-invalid-magic-{}.gfb",
+            "lynxes-ser006-invalid-magic-{}.gfb",
             std::process::id()
         ));
         fs::write(&path, b"not-a-gfb").unwrap();
@@ -964,7 +964,7 @@ mod tests {
     fn read_gfb_restores_lz4_payloads() {
         let graph = demo_graph();
         let path =
-            std::env::temp_dir().join(format!("graphframe-ser006-lz4-{}.gfb", std::process::id()));
+            std::env::temp_dir().join(format!("lynxes-ser006-lz4-{}.gfb", std::process::id()));
 
         write_gfb(
             &graph,
@@ -988,7 +988,7 @@ mod tests {
     fn read_gfb_inspect_returns_correct_counts_and_labels() {
         let graph = demo_graph();
         let path = std::env::temp_dir().join(format!(
-            "graphframe-inspect-counts-{}.gfb",
+            "lynxes-inspect-counts-{}.gfb",
             std::process::id()
         ));
 
@@ -1014,7 +1014,7 @@ mod tests {
     fn read_gfb_inspect_reports_version_and_compression() {
         let graph = demo_graph();
         let path = std::env::temp_dir().join(format!(
-            "graphframe-inspect-meta-{}.gfb",
+            "lynxes-inspect-meta-{}.gfb",
             std::process::id()
         ));
 
@@ -1042,11 +1042,11 @@ mod tests {
     fn read_gfb_inspect_has_schema_flag_matches_write_options() {
         let graph = demo_graph();
         let path_no_schema = std::env::temp_dir().join(format!(
-            "graphframe-inspect-noschema-{}.gfb",
+            "lynxes-inspect-noschema-{}.gfb",
             std::process::id()
         ));
         let path_with_schema = std::env::temp_dir().join(format!(
-            "graphframe-inspect-schema-{}.gfb",
+            "lynxes-inspect-schema-{}.gfb",
             std::process::id()
         ));
 
@@ -1077,7 +1077,7 @@ mod tests {
         // (Timing assertions are fragile; we just validate correctness here.)
         let graph = demo_graph();
         let path = std::env::temp_dir().join(format!(
-            "graphframe-inspect-skip-{}.gfb",
+            "lynxes-inspect-skip-{}.gfb",
             std::process::id()
         ));
         write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();

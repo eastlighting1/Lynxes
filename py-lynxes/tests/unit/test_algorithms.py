@@ -29,3 +29,10 @@ class TestAlgorithms:
     def test_connected_components_has_column(self, graph):
         result = graph.connected_components()
         assert "component_id" in result.column_names()
+
+    def test_community_detection_column_values_returns_python_ints(self, graph):
+        result = graph.community_detection()
+        community_ids = result.column_values("community_id")
+
+        assert len(community_ids) == graph.node_count()
+        assert all(isinstance(value, int) for value in community_ids)

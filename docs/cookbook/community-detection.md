@@ -28,7 +28,7 @@ communities = g.community_detection()
 
 print("columns:", communities.column_names())
 print("rows:", communities.len())
-print(communities.to_pyarrow())
+print(communities)
 ```
 
 The returned node frame should include a `community_id` column. The row count should line up with the number of nodes in the source graph.
@@ -36,8 +36,7 @@ The returned node frame should include a `community_id` column. The row count sh
 If you need a fast first summary instead of the full assignment table, count rows per community immediately after the run:
 
 ```python
-assignments = communities.to_pyarrow()
-community_ids = assignments["community_id"].to_pylist()
+community_ids = communities.column_values("community_id")
 
 print("distinct communities:", len(set(community_ids)))
 ```

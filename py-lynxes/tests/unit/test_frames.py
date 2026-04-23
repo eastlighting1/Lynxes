@@ -28,6 +28,12 @@ class TestNodeFrameSetOps:
     def test_ids_returns_python_list_in_row_order(self, graph):
         assert graph.nodes().ids() == ["alice", "bob", "charlie", "diana", "acme"]
 
+    def test_column_values_returns_python_lists(self, graph):
+        nodes = graph.nodes()
+
+        assert nodes.column_values("_id") == nodes.ids()
+        assert nodes.column_values("_label")[0] == ["Person"]
+
     def test_concat_disjoint_frames(self, graph):
         persons = graph.lazy().filter_nodes(gf.col("_label").contains("Person")).collect_nodes()
         companies = graph.lazy().filter_nodes(gf.col("_label").contains("Company")).collect_nodes()

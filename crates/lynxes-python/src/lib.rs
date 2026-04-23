@@ -374,6 +374,20 @@ impl PyNodeFrame {
             .collect()
     }
 
+    fn column_values(&self, name: &str, py: Python<'_>) -> PyResult<PyObject> {
+        let column = self
+            .inner
+            .to_record_batch()
+            .column_by_name(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("column not found: {name}")))?;
+        let py_array = column
+            .to_data()
+            .to_pyarrow(py)
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+        let values = py_array.bind(py).call_method0("to_pylist")?;
+        Ok(values.unbind())
+    }
+
     fn filter(&self, mask: &Bound<'_, PyAny>) -> PyResult<Self> {
         let mask = extract_boolean_mask(mask)?;
         let frame = self.inner.filter(&mask).map_err(gf_error_to_py_err)?;

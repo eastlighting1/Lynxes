@@ -1,11 +1,13 @@
-﻿use std::sync::Arc;
+use std::sync::Arc;
 
 use arrow_array::RecordBatch;
 use arrow_schema::{Field, Schema as ArrowSchema};
 use hashbrown::{HashMap, HashSet};
 
 use lynxes_core::{Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, Result, COL_NODE_LABEL};
-use lynxes_plan::{EdgeTypeSpec, Expr, Pattern, PatternStep, PatternStepConstraint, StringOp, UnaryOp};
+use lynxes_plan::{
+    EdgeTypeSpec, Expr, Pattern, PatternStep, PatternStepConstraint, StringOp, UnaryOp,
+};
 
 use super::{
     bind_pattern_alias, bind_pattern_alias_null, build_edge_node_ids, build_value_array,
@@ -478,7 +480,9 @@ pub(crate) fn read_pattern_field_value(
 }
 
 #[allow(dead_code)]
-pub(crate) fn collect_pattern_aliases(pattern: &[PatternStep]) -> Result<Vec<(String, PatternAliasKind)>> {
+pub(crate) fn collect_pattern_aliases(
+    pattern: &[PatternStep],
+) -> Result<Vec<(String, PatternAliasKind)>> {
     let mut aliases = Vec::new();
     let mut kinds = HashMap::<String, PatternAliasKind>::new();
 
@@ -616,6 +620,3 @@ pub(crate) fn execute_pattern_match(
     let filtered = apply_pattern_where(graph, &bindings, where_)?;
     materialize_pattern_bindings(graph, &pattern.steps, &filtered)
 }
-
-
-

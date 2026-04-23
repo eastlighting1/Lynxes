@@ -776,8 +776,7 @@ mod tests {
     #[test]
     fn write_gfb_emits_expected_envelope_and_footer() {
         let graph = demo_graph();
-        let path =
-            std::env::temp_dir().join(format!("lynxes-ser005-{}.gfb", std::process::id()));
+        let path = std::env::temp_dir().join(format!("lynxes-ser005-{}.gfb", std::process::id()));
 
         write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
         let bytes = fs::read(&path).unwrap();
@@ -802,10 +801,8 @@ mod tests {
     #[test]
     fn write_gfb_stores_header_and_index_metadata() {
         let graph = demo_graph();
-        let path = std::env::temp_dir().join(format!(
-            "lynxes-ser005-header-{}.gfb",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("lynxes-ser005-header-{}.gfb", std::process::id()));
 
         write_gfb(
             &graph,
@@ -987,10 +984,8 @@ mod tests {
     #[test]
     fn read_gfb_inspect_returns_correct_counts_and_labels() {
         let graph = demo_graph();
-        let path = std::env::temp_dir().join(format!(
-            "lynxes-inspect-counts-{}.gfb",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("lynxes-inspect-counts-{}.gfb", std::process::id()));
 
         write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
         let info = read_gfb_inspect(&path).unwrap();
@@ -1013,10 +1008,8 @@ mod tests {
     #[test]
     fn read_gfb_inspect_reports_version_and_compression() {
         let graph = demo_graph();
-        let path = std::env::temp_dir().join(format!(
-            "lynxes-inspect-meta-{}.gfb",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("lynxes-inspect-meta-{}.gfb", std::process::id()));
 
         write_gfb(
             &graph,
@@ -1045,10 +1038,8 @@ mod tests {
             "lynxes-inspect-noschema-{}.gfb",
             std::process::id()
         ));
-        let path_with_schema = std::env::temp_dir().join(format!(
-            "lynxes-inspect-schema-{}.gfb",
-            std::process::id()
-        ));
+        let path_with_schema =
+            std::env::temp_dir().join(format!("lynxes-inspect-schema-{}.gfb", std::process::id()));
 
         write_gfb(&graph, &path_no_schema, &GfbWriteOptions::default()).unwrap();
         write_gfb(
@@ -1076,10 +1067,8 @@ mod tests {
         // by simply checking it doesn't error and produces coherent output.
         // (Timing assertions are fragile; we just validate correctness here.)
         let graph = demo_graph();
-        let path = std::env::temp_dir().join(format!(
-            "lynxes-inspect-skip-{}.gfb",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("lynxes-inspect-skip-{}.gfb", std::process::id()));
         write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
         let file_size = fs::metadata(&path).unwrap().len();
         let info = read_gfb_inspect(&path).unwrap();

@@ -1,16 +1,26 @@
-﻿#[cfg(test)]
-mod tests {
-    use super::*;
+#[cfg(test)]
+mod executor_tests {
+    use std::sync::Arc;
+
+    use super::super::{
+        apply_pattern_where, bind_pattern_alias, execute, execute_pattern_step,
+        execute_pattern_steps, materialize_pattern_bindings, string_array, ExecutionValue,
+        PatternBindingRow, PatternBindings,
+    };
     use arrow_array::{
         builder::{ListBuilder, StringBuilder},
-        ArrayRef, Int64Array, Int8Array,
+        ArrayRef, Float64Array, Int64Array, Int8Array, ListArray, RecordBatch, StringArray,
     };
     use arrow_schema::{DataType, Field, Schema as ArrowSchema};
     use lynxes_core::{
-        Direction, EdgeTypeSpec, Optimizer, OptimizerOptions, Pattern, PatternStep, COL_EDGE_SRC,
-        COL_NODE_ID, COL_NODE_LABEL,
+        Direction, EdgeFrame, EdgeTypeSpec, GFError, GraphFrame, NodeFrame, Optimizer,
+        OptimizerOptions, Pattern, PatternStep, COL_EDGE_DIRECTION, COL_EDGE_DST, COL_EDGE_SRC,
+        COL_EDGE_TYPE, COL_NODE_ID, COL_NODE_LABEL,
     };
-    use lynxes_plan::{Connector, PartitionStrategy};
+    use lynxes_plan::{
+        AggExpr, BinaryOp, Connector, ExecutionHint, Expr, LogicalPlan, PartitionStrategy,
+        ScalarValue,
+    };
 
     fn labels_array(values: &[&[&str]]) -> ListArray {
         let mut builder = ListBuilder::new(StringBuilder::new());
@@ -1600,6 +1610,3 @@ mod tests {
         }
     }
 }
-
-
-

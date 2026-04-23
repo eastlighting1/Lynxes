@@ -1,4 +1,4 @@
-﻿#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -60,7 +60,6 @@ pub(crate) fn execute_limit_aware(
 
 /// Executes `input` and, when it is a Sort node, performs a partial top-K sort
 /// rather than a full sort, yielding O(E log n) instead of O(E log E).
-
 pub(crate) fn expand_graph_raw(
     graph: &GraphFrame,
     frontier_ids: &[String],
@@ -501,7 +500,6 @@ pub(crate) fn expand_frontier_csr(
     Ok((next, rows))
 }
 
-
 pub(crate) fn build_edge_node_ids(edges: &EdgeFrame) -> Result<Vec<String>> {
     let batch = edges.to_record_batch();
     let src_col = string_array(batch, COL_EDGE_SRC)?;
@@ -520,7 +518,3 @@ pub(crate) fn build_edge_node_ids(edges: &EdgeFrame) -> Result<Vec<String>> {
 
     Ok(node_ids)
 }
-
-
-
-

@@ -73,10 +73,7 @@ fn demo_graph() -> GraphFrame {
 #[test]
 fn gfb_file_round_trip_still_works_for_wasm_byte_helpers_path() {
     let graph = demo_graph();
-    let path = std::env::temp_dir().join(format!(
-        "lynxes-adv007-bytes-{}.gfb",
-        std::process::id()
-    ));
+    let path = std::env::temp_dir().join(format!("lynxes-adv007-bytes-{}.gfb", std::process::id()));
 
     write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
     let decoded = read_gfb(&path).unwrap();

@@ -1,4 +1,4 @@
-﻿use arrow_array::RecordBatch;
+use arrow_array::RecordBatch;
 
 use lynxes_core::{GFError, GraphFrame, NodeFrame, Result, COL_EDGE_DST, COL_EDGE_TYPE};
 use lynxes_plan::{AggExpr, Expr, StringOp, UnaryOp};
@@ -24,7 +24,6 @@ pub(crate) fn aggregate_neighbors(
         .collect::<Result<_>>()?;
     append_node_column(anchors, &output_name, &output_type, values)
 }
-
 
 pub(crate) fn agg_inner(agg: &AggExpr) -> &AggExpr {
     match agg {
@@ -194,7 +193,3 @@ pub(crate) fn evaluate_neighbor_expr(
         }
     }
 }
-
-
-
-

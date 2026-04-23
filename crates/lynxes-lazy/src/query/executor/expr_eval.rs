@@ -1,4 +1,4 @@
-﻿use std::{cmp::Ordering, sync::Arc};
+use std::{cmp::Ordering, sync::Arc};
 
 use arrow_array::{
     builder::{
@@ -515,7 +515,11 @@ pub(crate) fn compare_values(left: Value, right: Value, expected: Ordering) -> R
     Ok(Value::Bool(ordering == expected))
 }
 
-pub(crate) fn compare_values_inclusive(left: Value, right: Value, expected: Ordering) -> Result<Value> {
+pub(crate) fn compare_values_inclusive(
+    left: Value,
+    right: Value,
+    expected: Ordering,
+) -> Result<Value> {
     if matches!(left, Value::Null) || matches!(right, Value::Null) {
         return Ok(Value::Bool(false));
     }
@@ -628,7 +632,3 @@ pub(crate) fn read_array_value(array: &dyn Array, row: usize, name: &str) -> Res
         ),
     })
 }
-
-
-
-

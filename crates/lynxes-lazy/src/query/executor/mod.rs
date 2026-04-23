@@ -1,25 +1,10 @@
-﻿#[cfg(not(target_arch = "wasm32"))]
-use rayon::prelude::*;
-use std::{cmp::Ordering, sync::Arc};
+use std::sync::Arc;
 
-use arrow_array::{
-    builder::{
-        BooleanBuilder, Float64Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder,
-    },
-    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, Int8Array, ListArray, RecordBatch,
-    StringArray, UInt32Array,
-};
-use arrow_schema::{DataType, Field, Schema as ArrowSchema};
-use hashbrown::{HashMap, HashSet};
+use arrow_array::RecordBatch;
+use hashbrown::HashMap;
 
-use lynxes_core::{
-    Direction, EdgeFrame, GFError, GraphFrame, NodeFrame, Result, COL_EDGE_DIRECTION, COL_EDGE_DST,
-    COL_EDGE_SRC, COL_EDGE_TYPE, COL_NODE_LABEL,
-};
-use lynxes_plan::{
-    AggExpr, BinaryOp, EdgeTypeSpec, ExecutionHint, Expr, LogicalPlan, Pattern, PatternStep,
-    PatternStepConstraint, ScalarValue, StringOp, UnaryOp,
-};
+use lynxes_core::{EdgeFrame, GFError, GraphFrame, NodeFrame, Result};
+use lynxes_plan::{ExecutionHint, LogicalPlan};
 
 mod aggregation;
 mod expr_eval;
@@ -27,28 +12,33 @@ mod filter;
 mod pattern;
 mod traversal;
 
+#[allow(unused_imports)]
 pub(crate) use aggregation::{
     agg_inner, aggregate_for_node, aggregate_neighbors, evaluate_neighbor_expr,
     evaluate_neighbor_value,
 };
+#[allow(unused_imports)]
 pub(crate) use expr_eval::{
     agg_output_name, agg_output_type, append_node_column, arithmetic_values, boolean_op,
     build_value_array, cast_value, compare_values, compare_values_inclusive, convert_scalar,
     empty_aggregate_value, evaluate_binary, evaluate_binary_values, evaluate_expr, infer_expr_type,
     read_array_value, read_column_value, reduce_agg_values, Value,
 };
+#[allow(unused_imports)]
 pub(crate) use filter::{
     candidate_passes_pre_filter, compare_sort_values, evaluate_edge_predicate,
     evaluate_node_predicate, evaluate_predicate, execute_top_k, extract_node_frontier, int8_array,
     limit_edges, reorder_batch, sort_edges, sort_nodes, string_array, top_k_batch,
 };
+#[allow(unused_imports)]
 pub(crate) use pattern::{
     apply_pattern_where, bind_optional_pattern_step, collect_pattern_aliases,
-    execute_pattern_match, execute_pattern_step, execute_pattern_steps, evaluate_pattern_expr,
-    materialize_pattern_bindings, matches_edge_type, pattern_candidates,
+    evaluate_pattern_expr, execute_pattern_match, execute_pattern_step, execute_pattern_steps,
+    matches_edge_type, materialize_pattern_bindings, pattern_candidates,
     pattern_node_matches_constraint, read_pattern_field_value, single_hop_pattern_candidates,
     validate_pattern_support, variable_hop_pattern_candidates,
 };
+#[allow(unused_imports)]
 pub(crate) use traversal::{
     build_edge_node_ids, build_expand_result, execute_limit_aware, execute_partition_parallel,
     expand_frontier_csr, expand_graph, expand_graph_raw, traverse_graph,
@@ -338,6 +328,3 @@ fn execute_hint(
 
 #[cfg(test)]
 mod tests;
-
-
-

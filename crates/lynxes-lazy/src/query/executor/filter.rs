@@ -1,13 +1,11 @@
-﻿use std::{cmp::Ordering, sync::Arc};
+use std::{cmp::Ordering, sync::Arc};
 
 use arrow_array::{ArrayRef, BooleanArray, RecordBatch, StringArray, UInt32Array};
 
 use lynxes_core::{EdgeFrame, GFError, GraphFrame, NodeFrame, Result};
 use lynxes_plan::{Expr, LogicalPlan};
 
-use super::{
-    execute, evaluate_expr, read_array_value, unsupported_plan, ExecutionValue, Value,
-};
+use super::{evaluate_expr, execute, read_array_value, unsupported_plan, ExecutionValue, Value};
 pub(crate) fn execute_top_k(
     input: &LogicalPlan,
     source_graph: Arc<GraphFrame>,
@@ -58,7 +56,12 @@ pub(crate) fn extract_node_frontier(val: ExecutionValue, context: &str) -> Resul
 ///
 /// Complexity: O(n + k log k) average via `select_nth_unstable_by`, versus
 /// O(n log n) for a full sort.  Falls back to full sort when `k >= n`.
-pub(crate) fn top_k_batch(batch: &RecordBatch, by: &str, descending: bool, k: usize) -> Result<RecordBatch> {
+pub(crate) fn top_k_batch(
+    batch: &RecordBatch,
+    by: &str,
+    descending: bool,
+    k: usize,
+) -> Result<RecordBatch> {
     let n = batch.num_rows();
     if k >= n {
         // Nothing to save ??just do a regular sort.
@@ -159,7 +162,11 @@ pub(crate) fn sort_edges(edges: &EdgeFrame, by: &str, descending: bool) -> Resul
     EdgeFrame::from_record_batch(batch)
 }
 
-pub(crate) fn reorder_batch(batch: &RecordBatch, by: &str, descending: bool) -> Result<RecordBatch> {
+pub(crate) fn reorder_batch(
+    batch: &RecordBatch,
+    by: &str,
+    descending: bool,
+) -> Result<RecordBatch> {
     let sort_column = batch
         .column_by_name(by)
         .ok_or_else(|| GFError::ColumnNotFound {
@@ -218,7 +225,10 @@ pub(crate) fn string_array<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a
         })
 }
 
-pub(crate) fn int8_array<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a arrow_array::Int8Array> {
+pub(crate) fn int8_array<'a>(
+    batch: &'a RecordBatch,
+    name: &str,
+) -> Result<&'a arrow_array::Int8Array> {
     batch
         .column_by_name(name)
         .ok_or_else(|| GFError::MissingReservedColumn {
@@ -232,6 +242,3 @@ pub(crate) fn int8_array<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a a
             actual: "non-Int8 array".to_owned(),
         })
 }
-
-
-

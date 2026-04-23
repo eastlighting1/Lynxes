@@ -78,10 +78,8 @@ fn demo_graph() -> GraphFrame {
 #[test]
 fn read_gfb_streaming_yields_one_graph_then_ends() {
     let graph = demo_graph();
-    let path = std::env::temp_dir().join(format!(
-        "lynxes-adv006-stream-{}.gfb",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("lynxes-adv006-stream-{}.gfb", std::process::id()));
     write_gfb(&graph, &path, &GfbWriteOptions::default()).unwrap();
 
     let runtime = tokio::runtime::Runtime::new().unwrap();

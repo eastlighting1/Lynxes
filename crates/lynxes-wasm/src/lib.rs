@@ -66,31 +66,27 @@ fn inspect_impl(bytes: &[u8]) -> Result<GfbInfo, String> {
     let minor = u16::from_le_bytes(bytes[10..12].try_into().unwrap());
 
     // Footer length is stored in the last 8 bytes.
-    let footer_len =
-        u64::from_le_bytes(bytes[bytes.len() - 8..].try_into().unwrap()) as usize;
+    let footer_len = u64::from_le_bytes(bytes[bytes.len() - 8..].try_into().unwrap()) as usize;
     if footer_len + 8 > bytes.len() {
         return Err("invalid gfb footer length".to_owned());
     }
     let footer_start = bytes.len() - 8 - footer_len;
-    let footer: GfbFooter =
-        serde_json::from_slice(&bytes[footer_start..bytes.len() - 8])
-            .map_err(|e| format!("footer parse error: {e}"))?;
+    let footer: GfbFooter = serde_json::from_slice(&bytes[footer_start..bytes.len() - 8])
+        .map_err(|e| format!("footer parse error: {e}"))?;
 
     // Header: 4-byte length prefix then JSON.
     let h_off = footer.header_offset as usize;
     if h_off + 4 > bytes.len() {
         return Err("header offset out of range".to_owned());
     }
-    let header_len =
-        u32::from_le_bytes(bytes[h_off..h_off + 4].try_into().unwrap()) as usize;
+    let header_len = u32::from_le_bytes(bytes[h_off..h_off + 4].try_into().unwrap()) as usize;
     let header_start = h_off + 4;
     let header_end = header_start + header_len;
     if header_end > bytes.len() {
         return Err("header block out of range".to_owned());
     }
-    let header: GfbHeaderSlim =
-        serde_json::from_slice(&bytes[header_start..header_end])
-            .map_err(|e| format!("header parse error: {e}"))?;
+    let header: GfbHeaderSlim = serde_json::from_slice(&bytes[header_start..header_end])
+        .map_err(|e| format!("header parse error: {e}"))?;
 
     Ok(GfbInfo {
         version: [major, minor],

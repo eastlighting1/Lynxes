@@ -26,14 +26,11 @@ Useful first checks are:
 
 ## Inspect Result Frames
 
-When you want to look past counts, convert the result to PyArrow:
+When you want to look past counts, inspect the frames directly:
 
 ```python
-node_batch = g.nodes().to_pyarrow()
-edge_batch = g.edges().to_pyarrow()
-
-print(node_batch)
-print(edge_batch)
+print(g.nodes())
+print(g.edges())
 ```
 
 This is the easiest way to verify:

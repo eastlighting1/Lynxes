@@ -34,7 +34,11 @@ path = g.shortest_path(
 print(path)
 ```
 
-The exact printed representation may differ, but the output should clearly describe a valid route from `seoul` to `busan`.
+On the shared weighted example, you should see:
+
+```text
+['seoul', 'daejeon', 'busan']
+```
 
 The important thing to notice is what the API feels like. This is not a plan waiting for `collect()`. It is an eager request: find the path now and return it now.
 
@@ -48,17 +52,17 @@ ranked = g.pagerank()
 
 print("columns:", ranked.column_names())
 print("rows:", ranked.len())
-print(ranked.to_pyarrow())
+print(ranked.head(5, sort_by="pagerank", descending=True))
 ```
 
 You should see:
 
 ```text
-columns: [...]
-rows: 3
+columns: ['_id', '_label', 'pagerank']
+rows: 5
 ```
 
-The exact column names may evolve, but you should see one row per node and a score-bearing result frame. That is the key thing to verify. PageRank is an eager algorithm, but the result still comes back in a frame-like surface that can be inspected or exported.
+The preview should show one row per node, sorted by score when you ask for it that way, and a score-bearing `pagerank` column. That is the key thing to verify. PageRank is an eager algorithm, but the result still comes back in a frame-like surface that can be inspected or exported.
 
 ## Step 3: Compare The Feel Of Querying And Algorithms
 
@@ -90,7 +94,12 @@ print("columns:", communities.column_names())
 print("rows:", communities.len())
 ```
 
-You should see output with one row per node and a column that identifies the assigned community.
+You should see output with one row per node and a column that identifies the assigned community:
+
+```text
+columns: ['_id', '_label', 'community_id']
+rows: 106
+```
 
 The exact values are less important for a first walkthrough than the result shape. What you want to verify here is that community detection runs successfully and produces a node-oriented result frame rather than a graph or a raw Python list.
 

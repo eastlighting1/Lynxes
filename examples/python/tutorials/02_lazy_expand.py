@@ -24,7 +24,7 @@ def main() -> None:
     print(f"graph: {GRAPH_PATH.name}")
     print(f"expanded nodes: {result.node_count()}")
     print(f"expanded edges: {result.edge_count()}")
-    print(f"node ids: {result.nodes().to_pyarrow()['_id'].to_pylist()}")
+    print(f"node ids: {result.nodes().ids()}")
 
 
 if __name__ == "__main__":

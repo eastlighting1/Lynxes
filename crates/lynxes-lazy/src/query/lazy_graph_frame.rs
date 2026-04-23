@@ -187,7 +187,7 @@ impl LazyGraphFrame {
         match execute(&plan, source_graph)? {
             ExecutionValue::Graph(graph) => Ok(graph),
             ExecutionValue::Nodes(_) | ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
-                Err(GFError::UnsupportedOperation {
+                Err(GFError::DomainMismatch {
                     message: "collect() requires a graph-domain plan; use collect_nodes() or collect_edges() for tabular domains".to_owned(),
                 })
             }
@@ -205,7 +205,7 @@ impl LazyGraphFrame {
             ExecutionValue::Graph(graph) => Ok(graph.nodes().clone()),
             ExecutionValue::Nodes(nodes) => Ok(nodes),
             ExecutionValue::Edges(_) | ExecutionValue::PatternRows(_) => {
-                Err(GFError::UnsupportedOperation {
+                Err(GFError::DomainMismatch {
                     message:
                         "collect_nodes() cannot materialize an edge-domain or pattern-row plan"
                             .to_owned(),
@@ -225,7 +225,7 @@ impl LazyGraphFrame {
             ExecutionValue::Graph(graph) => Ok(graph.edges().clone()),
             ExecutionValue::Edges(edges) => Ok(edges),
             ExecutionValue::Nodes(_) | ExecutionValue::PatternRows(_) => {
-                Err(GFError::UnsupportedOperation {
+                Err(GFError::DomainMismatch {
                     message: "collect_edges() cannot materialize a node-domain or pattern-row plan"
                         .to_owned(),
                 })
@@ -248,7 +248,7 @@ impl LazyGraphFrame {
         match execute(&plan, source_graph)? {
             ExecutionValue::PatternRows(batch) => Ok(batch),
             ExecutionValue::Graph(_) | ExecutionValue::Nodes(_) | ExecutionValue::Edges(_) => {
-                Err(GFError::UnsupportedOperation {
+                Err(GFError::DomainMismatch {
                     message: "collect_pattern_rows() requires a pattern-row domain plan".to_owned(),
                 })
             }

@@ -32,7 +32,7 @@ g = lx.graph(
         "_src": ["alice", "bob"],
         "_dst": ["bob", "carol"],
         "_type": ["KNOWS", "KNOWS"],
-        "_direction": [1, 1],
+        "_direction": [0, 0],
     },
 )
 

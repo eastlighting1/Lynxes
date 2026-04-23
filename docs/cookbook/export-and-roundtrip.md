@@ -67,7 +67,7 @@ If the graph is important enough that counts alone are not reassuring, inspect o
 
 ```python
 print(restored.nodes().ids()[:3])
-print(restored.edges().to_pyarrow()["_type"].to_pylist()[:3])
+print(restored.edges().column_values("_type")[:3])
 ```
 
 For larger workflows, that second check is often the one that catches real mistakes. A graph can preserve counts while still losing the labels, types, or endpoint semantics you assumed were present.

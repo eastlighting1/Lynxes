@@ -47,8 +47,8 @@ print("edges:", g.edge_count())
 You should see:
 
 ```text
-nodes: 3
-edges: 2
+nodes: 5
+edges: 4
 ```
 
 If you get a file-not-found error here, do not skip ahead. The rest of the guide depends on this exact file loading correctly.
@@ -74,8 +74,8 @@ The exact extra columns depend on the example data, but the reserved columns sho
 If you want a more direct look at the payload, add:
 
 ```python
-print(g.nodes().to_pyarrow())
-print(g.edges().to_pyarrow())
+print(g.nodes())
+print(g.edges())
 ```
 
 At this point you should be able to recognize node ids, labels, and edge endpoints by eye.
@@ -100,9 +100,9 @@ print("expanded ids:", result.nodes().ids())
 On the shared example graph, the result should look like this:
 
 ```text
-expanded nodes: 3
-expanded edges: 2
-expanded ids: ['alice', 'bob', 'charlie']
+expanded nodes: 4
+expanded edges: 3
+expanded ids: ['alice', 'bob', 'charlie', 'diana']
 ```
 
 What just happened is worth saying plainly. The query did not start by traversing the whole graph. It started by choosing `alice` as a seed node, then expanded outward along `KNOWS` edges, then materialized the resulting subgraph at `collect()`.

@@ -41,12 +41,12 @@ print("ids:", one_hop.nodes().ids())
 You should see a result shaped like this:
 
 ```text
-nodes: 2
-edges: 1
-ids: ['alice', 'bob']
+nodes: 3
+edges: 2
+ids: ['alice', 'bob', 'diana']
 ```
 
-This is a useful first check because it is easy to reason about by eye. Starting from `alice`, one outward hop along the graph should bring in `bob` and the edge that connects them.
+This is a useful first check because it is easy to reason about by eye. Starting from `alice`, one outward hop along the graph should bring in both direct outward neighbors, `bob` and `diana`, plus the edges that connect them.
 
 ## Python: Expand Two Hops
 
@@ -63,9 +63,9 @@ print("ids:", two_hop.nodes().ids())
 On the shared example graph, this should look like:
 
 ```text
-nodes: 3
-edges: 2
-ids: ['alice', 'bob', 'charlie']
+nodes: 5
+edges: 4
+ids: ['alice', 'bob', 'charlie', 'diana', 'acme']
 ```
 
 This is the first moment where the shape of a graph result becomes clear. The result is not only "the nodes that matched." It is the subgraph needed to represent what the traversal reached.
@@ -86,7 +86,7 @@ print("typed nodes:", typed.node_count())
 print("typed edges:", typed.edge_count())
 ```
 
-On this example graph, the output should still be consistent with the two-hop result above because the relevant edges are already of type `KNOWS`.
+On this example graph, the output should exclude the `WORKS_AT` hop from `diana` to `acme`, so the typed result stays smaller than the unrestricted two-hop expansion.
 
 This step matters because it introduces a pattern that scales beyond toy graphs. Once multiple relationship types appear, edge-type restriction stops being optional and starts being one of the main ways users say what they really mean.
 
@@ -98,7 +98,7 @@ The CLI version of the same traversal looks like this:
 cargo run -p lynxes-cli -- query examples/data/example_simple.gf --from alice --hops 2 --direction out --view info
 ```
 
-If the CLI is behaving normally, the output should show a subgraph summary with 3 nodes and 2 edges.
+If the CLI is behaving normally, the output should show a subgraph summary with 5 nodes and 4 edges.
 
 Now add the type restriction:
 

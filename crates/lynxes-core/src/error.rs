@@ -189,6 +189,9 @@ pub enum GFError {
     #[error("connector error: {message}")]
     ConnectorError { message: String },
 
+    #[error("domain mismatch: {message}")]
+    DomainMismatch { message: String },
+
     #[error("unsupported operation: {message}")]
     UnsupportedOperation { message: String },
 
@@ -239,5 +242,17 @@ mod tests {
         };
 
         assert_eq!(err.to_string(), "node not found: alice");
+    }
+
+    #[test]
+    fn domain_mismatch_formats_context() {
+        let err = GFError::DomainMismatch {
+            message: "collect() requires a graph-domain plan".to_string(),
+        };
+
+        assert_eq!(
+            err.to_string(),
+            "domain mismatch: collect() requires a graph-domain plan"
+        );
     }
 }

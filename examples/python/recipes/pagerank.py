@@ -19,7 +19,7 @@ def main() -> None:
     print(f"graph: {GRAPH_PATH.name}")
     print(f"columns: {ranks.column_names()}")
     print(f"rows: {ranks.len()}")
-    print(ranks.to_pyarrow())
+    print(ranks.head(5, sort_by="pagerank", descending=True))
 
 
 if __name__ == "__main__":

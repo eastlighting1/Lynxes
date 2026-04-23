@@ -6,7 +6,7 @@ This quickstart shows the smallest useful Python workflow in Lynxes:
 2. load it into a `GraphFrame`
 3. run a lazy traversal query
 4. run one built-in algorithm
-5. inspect the result as Arrow data
+5. inspect the result in Lynxes, then hand it off to Arrow only if you need interop
 
 Source examples:
 
@@ -82,19 +82,16 @@ ranks = g.pagerank()
 print(ranks.head(5, sort_by="pagerank", descending=True))
 ```
 
-## 5. Inspect Results as Arrow
+## 5. Inspect Results
 
-Lynxes frames can be inspected as PyArrow record batches:
+Lynxes frames can be inspected directly:
 
 ```python
-node_batch = result.nodes().to_pyarrow()
-edge_batch = result.edges().to_pyarrow()
-
-print(node_batch)
-print(edge_batch)
+print(result.nodes())
+print(result.edges())
 ```
 
-This is useful when you want to hand results off to Arrow-based tooling without inventing a separate graph wrapper layer.
+If you do need Arrow-based downstream tooling afterward, `to_pyarrow()` is still the handoff path.
 
 ## Common Patterns
 

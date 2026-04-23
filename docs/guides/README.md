@@ -24,6 +24,20 @@ Start here if you want to begin from the CLI:
 1. [Getting Started on the CLI](getting-started-cli.md)
 2. [Your First Graph Query](first-graph-query.md)
 
+## More Guides
+
+If you already know the basic path and want a more task-oriented entry point, these guides cover the rest of the section:
+
+- [Loading Data](loading-data.md)
+- [Inspecting Graphs](inspecting-graphs.md)
+- [Filtering and Selection](filtering-and-selection.md)
+- [Traversal and Expand](traversal-and-expand.md)
+- [Algorithms](algorithms.md)
+- [I/O Round-Trip](io-roundtrip.md)
+- [Connectors](connectors.md)
+- [Errors and Debugging](errors-and-debugging.md)
+- [Benchmarks](benchmarks.md)
+
 ## What Belongs Here
 
 The documents in this section are meant to be learning-oriented. That means they should do a few things consistently:

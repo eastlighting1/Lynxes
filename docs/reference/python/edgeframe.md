@@ -26,6 +26,7 @@
 - `head(...)` / `tail(...)`
 - `glimpse(...)`
 - `info()` / `schema()` / `describe(...)`
+- `column_values(name)`
 - `out_neighbors(node_id)` / `in_neighbors(node_id)`
 - `neighbors(node_id, direction=...)`
 - `out_degree(node_id)` / `in_degree(node_id)`
@@ -38,6 +39,8 @@ Although an edge result looks tabular at the API boundary, Lynxes still treats g
 Use `EdgeFrame` for inspection, export, and CSR-backed local neighborhood lookups. If you need graph-global algorithms, rehydrate a `GraphFrame` with `with_nodes(nodes)`.
 
 If you are creating an edge frame from Python data, `from_dict({...})` is the shortest constructor path. `from_arrow(...)` is still useful when Arrow batches already exist upstream.
+
+`column_values(name)` is the shortest Python-native way to pull one edge column into a plain list without dropping to `pyarrow`.
 
 ## Example
 

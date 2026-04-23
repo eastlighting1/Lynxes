@@ -19,7 +19,8 @@ def main() -> None:
     print(f"graph: {GRAPH_PATH.name}")
     print(f"columns: {communities.column_names()}")
     print(f"rows: {communities.len()}")
-    print(communities.to_pyarrow())
+    print(f"distinct communities: {len(set(communities.column_values('community_id')))}")
+    print(communities.head(10, sort_by="community_id"))
 
 
 if __name__ == "__main__":

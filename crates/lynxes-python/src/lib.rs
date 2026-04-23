@@ -569,6 +569,20 @@ impl PyEdgeFrame {
             .collect()
     }
 
+    fn column_values(&self, name: &str, py: Python<'_>) -> PyResult<PyObject> {
+        let column = self
+            .inner
+            .to_record_batch()
+            .column_by_name(name)
+            .ok_or_else(|| PyKeyError::new_err(format!("column not found: {name}")))?;
+        let py_array = column
+            .to_data()
+            .to_pyarrow(py)
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+        let values = py_array.bind(py).call_method0("to_pylist")?;
+        Ok(values.unbind())
+    }
+
     fn filter(&self, mask: &Bound<'_, PyAny>) -> PyResult<Self> {
         let mask = extract_boolean_mask(mask)?;
         let frame = self.inner.filter(&mask).map_err(gf_error_to_py_err)?;
@@ -1312,7 +1326,10 @@ impl PyLazyGraphFrame {
                     .to_pyarrow(py)
                     .map_err(|arrow_err| PyRuntimeError::new_err(arrow_err.to_string())),
                 Err(pattern_err) => {
-                    if matches!(pattern_err, GFError::UnsupportedOperation { .. }) {
+                    if matches!(
+                        pattern_err,
+                        GFError::UnsupportedOperation { .. } | GFError::DomainMismatch { .. }
+                    ) {
                         Err(gf_error_to_py_err(err))
                     } else {
                         Err(gf_error_to_py_err(pattern_err))
@@ -3154,7 +3171,8 @@ fn gf_error_to_py_err(err: GFError) -> PyErr {
         | GFError::SchemaValidation { .. }
         | GFError::ParseError { .. }
         | GFError::InvalidConfig { .. }
-        | GFError::NegativeWeight { .. } => PyValueError::new_err(message),
+        | GFError::NegativeWeight { .. }
+        | GFError::DomainMismatch { .. } => PyValueError::new_err(message),
 
         GFError::UnsupportedOperation { .. } => PyNotImplementedError::new_err(message),
         GFError::IoError(_) => PyOSError::new_err(message),

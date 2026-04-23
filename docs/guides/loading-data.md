@@ -59,6 +59,8 @@ g = lx.read_parquet_graph("nodes.parquet", "edges.parquet")
 print(g.node_count(), g.edge_count())
 ```
 
+That example assumes you already have a parquet node/edge pair. If you are starting from a `.gf` graph inside Lynxes, generate the pair first with `write_parquet_graph(...)` and then reload it.
+
 Lynxes expects a two-file graph shape:
 
 - one parquet file for nodes

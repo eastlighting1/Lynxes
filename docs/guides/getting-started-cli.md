@@ -22,7 +22,7 @@ Run:
 cargo run -p lynxes-cli -- inspect examples/data/example_simple.gf
 ```
 
-You should see a summary describing the file and the graph shape. The exact formatting may evolve, but the output should clearly indicate that the graph contains 3 nodes and 2 edges.
+You should see a summary describing the file and the graph shape. The exact formatting may evolve, but the output should clearly indicate that the graph contains 5 nodes and 4 edges.
 
 This is the fastest possible CLI sanity check. If this command fails, do not move on to querying or conversion yet.
 
@@ -34,7 +34,7 @@ Now run:
 cargo run -p lynxes-cli -- query examples/data/example_simple.gf --from alice --hops 2 --direction out
 ```
 
-On the shared example graph, the result should represent a small outward neighborhood from `alice`. If you use the `--view info` form, the output should show a subgraph with 3 nodes and 2 edges.
+On the shared example graph, the result should represent a small outward neighborhood from `alice`. If you use the `--view info` form, the output should show a subgraph with 5 nodes and 4 edges.
 
 That is the key learning moment for the CLI path. The command is not just scanning rows. It is materializing a graph result from a traversal.
 
@@ -46,7 +46,7 @@ Add the edge-type constraint:
 cargo run -p lynxes-cli -- query examples/data/example_simple.gf --from alice --hops 2 --edge-type KNOWS --direction out
 ```
 
-This should still succeed on the shared example, and it makes the traversal intent more explicit. It is also a good reminder that the CLI is not a separate product with different semantics; it is another entrance to the same graph model.
+This should still succeed on the shared example, and with `--view info` it should show the smaller `KNOWS`-only subgraph with 4 nodes and 3 edges. It is also a good reminder that the CLI is not a separate product with different semantics; it is another entrance to the same graph model.
 
 ## Step 4: Convert The Graph
 

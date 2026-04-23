@@ -42,9 +42,9 @@ print("ids:", ego.nodes().ids())
 On the shared example graph, this should produce a result shaped like:
 
 ```text
-nodes: 2
-edges: 1
-ids: ['alice', 'bob']
+nodes: 3
+edges: 2
+ids: ['alice', 'bob', 'diana']
 ```
 
 If you want a wider ego network, increase the hop count and, if needed, restrict by edge type:
@@ -66,7 +66,13 @@ print("edges:", ego_2hop.edge_count())
 print("ids:", ego_2hop.nodes().ids())
 ```
 
-On the same example graph, the two-hop version should bring in `charlie` as well.
+On the same example graph, the two-hop version should bring in `charlie` while keeping the `KNOWS`-reachable neighborhood:
+
+```text
+nodes: 4
+edges: 3
+ids: ['alice', 'bob', 'charlie', 'diana']
+```
 
 That difference between one hop and two hops is the first real decision point in many graph workflows. One hop is often an inspection tool. Two hops is where you start drifting toward "small induced subgraph" rather than "local neighborhood." That can still be exactly what you want, but it is worth noticing.
 
@@ -87,7 +93,7 @@ Before treating the result as correct, check these things:
 - the edge count is not zero unless that is genuinely expected
 - the result is a graph-shaped output rather than only a node list
 
-If you use the one-hop version on the shared example and get more than one outward edge, you are probably not on the expected input graph.
+If you use the one-hop version on the shared example and do not see both `bob` and `diana`, you are probably not on the expected input graph.
 
 If you are doing this on your own graph, it is also worth comparing the result against one direct inspection query or one manual sample row. Ego-network recipes are often used early in analysis, and a quiet seed mismatch can lead you into the wrong part of the graph very quickly.
 

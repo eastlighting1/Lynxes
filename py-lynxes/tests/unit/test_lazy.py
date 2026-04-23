@@ -75,6 +75,20 @@ class TestExpand:
         assert "bob" in node_ids
 
 
+class TestCollectionDomains:
+    def test_collect_on_node_domain_raises_value_error(self, graph):
+        lazy = graph.lazy().filter_nodes(gf.col("_id") == "alice")
+
+        with pytest.raises(ValueError, match="graph-domain plan"):
+            lazy.collect()
+
+    def test_collect_edges_on_node_domain_raises_value_error(self, graph):
+        lazy = graph.lazy().filter_nodes(gf.col("_id") == "alice")
+
+        with pytest.raises(ValueError, match="node-domain or pattern-row plan"):
+            lazy.collect_edges()
+
+
 class TestAggExprAlias:
     def test_count_alias_changes_column_name(self, graph):
         result = (

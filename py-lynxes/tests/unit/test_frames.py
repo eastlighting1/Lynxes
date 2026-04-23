@@ -181,6 +181,12 @@ class TestGraphFrameGnnBridge:
         assert edges.out_degree("alice") == 2
         assert edges.in_degree("charlie") == 1
 
+    def test_edgeframe_column_values_returns_python_lists(self, graph):
+        edges = graph.edges()
+
+        assert edges.column_values("_type") == ["KNOWS", "KNOWS", "KNOWS", "WORKS_AT"]
+        assert edges.column_values("_src") == ["alice", "bob", "alice", "diana"]
+
     def test_edgeframe_count_aliases(self, graph):
         edges = graph.edges()
         nodes = graph.nodes()

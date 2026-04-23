@@ -21,7 +21,9 @@ def main() -> None:
     print(f"node columns: {graph.nodes().column_names()}")
     print(f"edge columns: {graph.edges().column_names()}")
     print()
-    print(graph.nodes().to_pyarrow())
+    print(graph.nodes())
+    print()
+    print(graph.edges())
 
 
 if __name__ == "__main__":

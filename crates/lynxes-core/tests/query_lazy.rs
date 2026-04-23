@@ -266,7 +266,7 @@ fn collect_rejects_non_graph_domain_results() {
         .filter_nodes(age_gt_30())
         .collect()
         .unwrap_err();
-    assert!(matches!(err, GFError::UnsupportedOperation { .. }));
+    assert!(matches!(err, GFError::DomainMismatch { .. }));
     assert!(err
         .to_string()
         .contains("collect() requires a graph-domain plan"));

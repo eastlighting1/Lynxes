@@ -40,7 +40,7 @@ def _singleton_label_array(column, *, name):
     return pa.ListArray.from_arrays(offsets, values)
 
 
-def _csv_table_to_node_frame(table, *, label=None, id_col=None, id_prefix=None):
+def _csv_table_to_node_frame(table, *, label=None, id_col=None, id_prefix=None, columns=None):
     pa, _, _ = _require_pyarrow()
     column_names = table.column_names
     rows = table.num_rows
@@ -64,11 +64,14 @@ def _csv_table_to_node_frame(table, *, label=None, id_col=None, id_prefix=None):
 
     arrays = [id_array, label_array]
     names = ["_id", "_label"]
-    for name in column_names:
+    output_names = columns if columns is not None else column_names
+    for name in output_names:
         if name in {"_id", "_label"}:
             continue
         if name.startswith("_"):
             raise ValueError(f"CSV column {name!r} is reserved by NodeFrame")
+        if name not in column_names:
+            raise ValueError(f"column {name!r} not found in CSV columns")
         arrays.append(table[name].combine_chunks())
         names.append(name)
 
@@ -82,6 +85,8 @@ def read_csv(
     label=None,
     id_col=None,
     id_prefix=None,
+    columns=None,
+    schema_overrides=None,
     engine="native",
     infer_schema_rows=None,
     batch_size=65536,
@@ -100,6 +105,8 @@ def read_csv(
             label=label,
             id_col=id_col,
             id_prefix=id_prefix,
+            columns=columns,
+            schema_overrides=schema_overrides,
             infer_schema_rows=infer_schema_rows,
             batch_size=batch_size,
             has_header=has_header,
@@ -111,14 +118,70 @@ def read_csv(
     if infer_schema_rows is not None or batch_size != 65536 or not has_header or delimiter != ",":
         raise ValueError("native CSV options require engine='native'")
 
-    _, _, csv = _require_pyarrow()
+    pa, _, csv = _require_pyarrow()
+    if convert_options is None:
+        include_columns = _pyarrow_include_columns(columns, id_col=id_col, label=label)
+        column_types = _pyarrow_schema_overrides(pa, schema_overrides)
+        if include_columns is not None or column_types:
+            convert_options = csv.ConvertOptions(
+                include_columns=include_columns,
+                column_types=column_types,
+            )
+    elif columns is not None or schema_overrides:
+        raise ValueError(
+            "columns/schema_overrides cannot be combined with explicit pyarrow convert_options"
+        )
     table = csv.read_csv(
         path,
         read_options=read_options,
         parse_options=parse_options,
         convert_options=convert_options,
     )
-    return _csv_table_to_node_frame(table, label=label, id_col=id_col, id_prefix=id_prefix)
+    return _csv_table_to_node_frame(
+        table,
+        label=label,
+        id_col=id_col,
+        id_prefix=id_prefix,
+        columns=columns,
+    )
+
+
+def _pyarrow_include_columns(columns, *, id_col, label):
+    if columns is None:
+        return None
+
+    include_columns = []
+    if id_col is not None:
+        include_columns.append(id_col)
+    elif "_id" in columns:
+        include_columns.append("_id")
+    if label is None:
+        include_columns.append("_label")
+    for name in columns:
+        if name not in include_columns:
+            include_columns.append(name)
+    return include_columns
+
+
+def _pyarrow_schema_overrides(pa, schema_overrides):
+    if not schema_overrides:
+        return {}
+
+    marker_to_type = {
+        "String": pa.string(),
+        "StringView": getattr(pa, "string_view", pa.string)(),
+        "Utf8View": getattr(pa, "string_view", pa.string)(),
+        "Int": pa.int64(),
+        "Float": pa.float64(),
+        "Bool": pa.bool_(),
+    }
+    out = {}
+    for name, dtype in schema_overrides.items():
+        try:
+            out[name] = marker_to_type[dtype]
+        except KeyError as exc:
+            raise ValueError(f"unsupported schema override dtype for {name!r}: {dtype!r}") from exc
+    return out
 
 
 def _node_frame_read_csv(
@@ -128,6 +191,8 @@ def _node_frame_read_csv(
     label=None,
     id_col=None,
     id_prefix=None,
+    columns=None,
+    schema_overrides=None,
     engine="native",
     infer_schema_rows=None,
     batch_size=65536,
@@ -142,6 +207,8 @@ def _node_frame_read_csv(
         label=label,
         id_col=id_col,
         id_prefix=id_prefix,
+        columns=columns,
+        schema_overrides=schema_overrides,
         engine=engine,
         infer_schema_rows=infer_schema_rows,
         batch_size=batch_size,

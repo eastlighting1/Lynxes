@@ -12,7 +12,8 @@ use arrow::{
     array::{
         make_array, Array, ArrayData, ArrayRef, BooleanArray, BooleanBuilder, Float32Array,
         Float64Array, Float64Builder, Int16Array, Int32Array, Int64Array, Int64Builder, Int8Array,
-        ListArray, ListBuilder, StringArray, StringBuilder, UInt32Array, UInt64Array,
+        LargeStringArray, ListArray, ListBuilder, StringArray, StringBuilder, StringViewArray,
+        UInt32Array, UInt64Array,
     },
     datatypes::{DataType, Field, Fields, Schema},
     pyarrow::{PyArrowType, ToPyArrow},
@@ -45,7 +46,7 @@ use pyo3::{
         PyKeyError, PyNotImplementedError, PyOSError, PyRuntimeError, PyTypeError, PyValueError,
     },
     prelude::*,
-    types::{PyAny, PyList, PyTuple, PyType},
+    types::{PyAny, PyDict, PyList, PyTuple, PyType},
     wrap_pyfunction,
 };
 #[pyclass(name = "NodeFrame", module = "lynxes")]
@@ -386,6 +387,14 @@ impl PyNodeFrame {
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
         let values = py_array.bind(py).call_method0("to_pylist")?;
         Ok(values.unbind())
+    }
+
+    fn to_rows(&self, py: Python<'_>) -> PyResult<PyObject> {
+        record_batch_to_py_rows(self.inner.to_record_batch(), py)
+    }
+
+    fn to_pylist(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.to_rows(py)
     }
 
     fn filter(&self, mask: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -1901,12 +1910,14 @@ fn graph(nodes: &Bound<'_, PyAny>, edges: &Bound<'_, PyAny>) -> PyResult<PyGraph
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, *, label=None, id_col=None, id_prefix=None, infer_schema_rows=None, batch_size=65536, has_header=true, delimiter=","))]
+#[pyo3(signature = (path, *, label=None, id_col=None, id_prefix=None, columns=None, schema_overrides=None, infer_schema_rows=None, batch_size=65536, has_header=true, delimiter=","))]
 fn read_csv_native_py(
     path: &Bound<'_, PyAny>,
     label: Option<String>,
     id_col: Option<String>,
     id_prefix: Option<String>,
+    columns: Option<Vec<String>>,
+    schema_overrides: Option<&Bound<'_, PyAny>>,
     infer_schema_rows: Option<usize>,
     batch_size: usize,
     has_header: bool,
@@ -1914,12 +1925,15 @@ fn read_csv_native_py(
 ) -> PyResult<PyNodeFrame> {
     let path = path_from_py_any(path)?;
     let delimiter = csv_delimiter_byte(delimiter)?;
+    let schema_overrides = csv_schema_overrides_from_py(schema_overrides)?;
     let frame = read_csv_nodes(
         path,
         &CsvNodeReadOptions {
             label,
             id_col,
             id_prefix,
+            columns,
+            schema_overrides,
             infer_schema_rows,
             batch_size,
             has_header,
@@ -2143,6 +2157,7 @@ fn _lynxes(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("Date", "Date")?;
     m.add("DateTime", "DateTime")?;
     m.add("Duration", "Duration")?;
+    m.add("StringView", "StringView")?;
     m.add("Any", "Any")?;
 
     m.add_class::<PyNodeFrame>()?;
@@ -3405,12 +3420,13 @@ fn extract_dtype(dtype: &Bound<'_, PyAny>) -> PyResult<DataType> {
 
     match dtype.as_str() {
         "String" => Ok(DataType::Utf8),
+        "StringView" | "Utf8View" => Ok(DataType::Utf8View),
         "Int" => Ok(DataType::Int64),
         "Float" => Ok(DataType::Float64),
         "Bool" => Ok(DataType::Boolean),
         "Null" => Ok(DataType::Null),
         other => Err(PyTypeError::new_err(format!(
-            "unsupported dtype marker for cast(): {other}"
+            "unsupported Lynxes dtype marker: {other}"
         ))),
     }
 }
@@ -3437,6 +3453,152 @@ fn csv_delimiter_byte(delimiter: &str) -> PyResult<u8> {
         ));
     }
     Ok(bytes[0])
+}
+
+fn csv_schema_overrides_from_py(
+    schema_overrides: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Vec<(String, DataType)>> {
+    let Some(schema_overrides) = schema_overrides else {
+        return Ok(Vec::new());
+    };
+    if schema_overrides.is_none() {
+        return Ok(Vec::new());
+    }
+
+    let dict = schema_overrides
+        .downcast::<pyo3::types::PyDict>()
+        .map_err(|_| {
+            PyTypeError::new_err("schema_overrides must be a dict[str, Lynxes dtype marker]")
+        })?;
+    let mut out = Vec::with_capacity(dict.len());
+    for (key, value) in dict.iter() {
+        let name = key
+            .extract::<String>()
+            .map_err(|_| PyTypeError::new_err("schema_overrides keys must be strings"))?;
+        out.push((name, extract_dtype(&value)?));
+    }
+    Ok(out)
+}
+
+fn record_batch_to_py_rows(batch: &RecordBatch, py: Python<'_>) -> PyResult<PyObject> {
+    let rows = PyList::empty_bound(py);
+    let schema = batch.schema_ref();
+
+    for row_idx in 0..batch.num_rows() {
+        let row = PyDict::new_bound(py);
+        for (col_idx, field) in schema.fields().iter().enumerate() {
+            let value = array_value_to_py_object(batch.column(col_idx).as_ref(), row_idx, py)?;
+            row.set_item(field.name(), value)?;
+        }
+        rows.append(row)?;
+    }
+
+    Ok(rows.into_py(py))
+}
+
+fn array_value_to_py_object(
+    array: &dyn Array,
+    row_idx: usize,
+    py: Python<'_>,
+) -> PyResult<PyObject> {
+    if array.is_null(row_idx) {
+        return Ok(py.None());
+    }
+
+    match array.data_type() {
+        DataType::Utf8 => {
+            let array = array
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| PyRuntimeError::new_err("Utf8 column has non-StringArray storage"))?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::LargeUtf8 => {
+            let array = array.as_any().downcast_ref::<LargeStringArray>().ok_or_else(|| {
+                PyRuntimeError::new_err("LargeUtf8 column has non-LargeStringArray storage")
+            })?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::Utf8View => {
+            let array = array.as_any().downcast_ref::<StringViewArray>().ok_or_else(|| {
+                PyRuntimeError::new_err("Utf8View column has non-StringViewArray storage")
+            })?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::Int8 => {
+            let array = array
+                .as_any()
+                .downcast_ref::<Int8Array>()
+                .ok_or_else(|| PyRuntimeError::new_err("Int8 column has non-Int8Array storage"))?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::Int16 => {
+            let array = array
+                .as_any()
+                .downcast_ref::<Int16Array>()
+                .ok_or_else(|| PyRuntimeError::new_err("Int16 column has non-Int16Array storage"))?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::Int32 => {
+            let array = array
+                .as_any()
+                .downcast_ref::<Int32Array>()
+                .ok_or_else(|| PyRuntimeError::new_err("Int32 column has non-Int32Array storage"))?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::Int64 => {
+            let array = array
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .ok_or_else(|| PyRuntimeError::new_err("Int64 column has non-Int64Array storage"))?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::UInt32 => {
+            let array = array.as_any().downcast_ref::<UInt32Array>().ok_or_else(|| {
+                PyRuntimeError::new_err("UInt32 column has non-UInt32Array storage")
+            })?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::UInt64 => {
+            let array = array.as_any().downcast_ref::<UInt64Array>().ok_or_else(|| {
+                PyRuntimeError::new_err("UInt64 column has non-UInt64Array storage")
+            })?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::Float32 => {
+            let array = array.as_any().downcast_ref::<Float32Array>().ok_or_else(|| {
+                PyRuntimeError::new_err("Float32 column has non-Float32Array storage")
+            })?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::Float64 => {
+            let array = array.as_any().downcast_ref::<Float64Array>().ok_or_else(|| {
+                PyRuntimeError::new_err("Float64 column has non-Float64Array storage")
+            })?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::Boolean => {
+            let array = array.as_any().downcast_ref::<BooleanArray>().ok_or_else(|| {
+                PyRuntimeError::new_err("Boolean column has non-BooleanArray storage")
+            })?;
+            Ok(array.value(row_idx).into_py(py))
+        }
+        DataType::List(_) => {
+            let array = array
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .ok_or_else(|| PyRuntimeError::new_err("List column has non-ListArray storage"))?;
+            let values = array.value(row_idx);
+            let list = PyList::empty_bound(py);
+            for value_idx in 0..values.len() {
+                list.append(array_value_to_py_object(values.as_ref(), value_idx, py)?)?;
+            }
+            Ok(list.into_py(py))
+        }
+        other => Err(PyTypeError::new_err(format!(
+            "to_rows() does not support Arrow dtype {other:?} yet; use to_pyarrow().to_pylist() as a fallback"
+        ))),
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

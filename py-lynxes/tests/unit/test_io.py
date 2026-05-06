@@ -76,6 +76,61 @@ class TestCsvReader:
         assert pyarrow.column_values("_label") == native.column_values("_label")
         assert pyarrow.column_values("title") == native.column_values("title")
 
+    def test_read_csv_columns_projects_before_nodeframe_build(self, tmp_dir):
+        import lynxes as gf
+
+        path = tmp_dir / "projected_movies.csv"
+        path.write_text(
+            'id,title,cast,votes\n10,Alien,"[{""name"":""Ripley""}]",100\n11,Aliens,[],200\n',
+            encoding="utf-8",
+        )
+
+        nodes = gf.read_csv(
+            str(path),
+            label="RawMovie",
+            id_col="id",
+            columns=["title"],
+        )
+
+        assert nodes.column_names() == ["_id", "_label", "title"]
+        assert nodes.ids() == ["10", "11"]
+        assert nodes.column_values("title") == ["Alien", "Aliens"]
+
+    def test_read_csv_schema_override_supports_string_view(self, tmp_dir):
+        import lynxes as gf
+
+        path = tmp_dir / "json_payload.csv"
+        path.write_text(
+            'id,cast\n10,"[{""id"":1,""name"":""Ripley""}]"\n11,[]\n',
+            encoding="utf-8",
+        )
+
+        nodes = gf.read_csv(
+            str(path),
+            label="RawMovie",
+            id_col="id",
+            columns=["cast"],
+            schema_overrides={"cast": gf.StringView},
+        )
+
+        assert nodes.column_names() == ["_id", "_label", "cast"]
+        assert nodes.column_values("cast") == ['[{"id":1,"name":"Ripley"}]', "[]"]
+        assert nodes.to_rows()[0]["cast"] == '[{"id":1,"name":"Ripley"}]'
+
+    def test_nodeframe_to_rows_and_to_pylist_return_row_dicts(self, tmp_dir):
+        import lynxes as gf
+
+        path = tmp_dir / "rows.csv"
+        path.write_text("id,title,year\n10,Alien,1979\n11,Aliens,1986\n", encoding="utf-8")
+
+        nodes = gf.read_csv(str(path), label="RawMovie", id_col="id", columns=["title", "year"])
+
+        assert nodes.to_rows() == [
+            {"_id": "10", "_label": ["RawMovie"], "title": "Alien", "year": 1979},
+            {"_id": "11", "_label": ["RawMovie"], "title": "Aliens", "year": 1986},
+        ]
+        assert nodes.to_pylist() == nodes.to_rows()
+
 
 class TestIORoundTrip:
     def test_write_gfb_then_read_gfb(self, graph, tmp_dir):

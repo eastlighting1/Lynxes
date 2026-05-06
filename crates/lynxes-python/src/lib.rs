@@ -31,8 +31,8 @@ use lynxes_core::{
     EDGE_RESERVED_COLUMNS, NODE_RESERVED_COLUMNS,
 };
 use lynxes_io::{
-    parse_gf, read_gfb, read_parquet_graph, write_gf as core_write_gf, write_gfb,
-    write_parquet_graph,
+    parse_gf, read_csv_nodes, read_gfb, read_parquet_graph, write_gf as core_write_gf, write_gfb,
+    write_parquet_graph, CsvNodeReadOptions,
 };
 use lynxes_lazy::LazyGraphFrame;
 use lynxes_plan::{
@@ -1901,6 +1901,36 @@ fn graph(nodes: &Bound<'_, PyAny>, edges: &Bound<'_, PyAny>) -> PyResult<PyGraph
 }
 
 #[pyfunction]
+#[pyo3(signature = (path, *, label=None, id_col=None, id_prefix=None, infer_schema_rows=None, batch_size=65536, has_header=true, delimiter=","))]
+fn read_csv_native_py(
+    path: &Bound<'_, PyAny>,
+    label: Option<String>,
+    id_col: Option<String>,
+    id_prefix: Option<String>,
+    infer_schema_rows: Option<usize>,
+    batch_size: usize,
+    has_header: bool,
+    delimiter: &str,
+) -> PyResult<PyNodeFrame> {
+    let path = path_from_py_any(path)?;
+    let delimiter = csv_delimiter_byte(delimiter)?;
+    let frame = read_csv_nodes(
+        path,
+        &CsvNodeReadOptions {
+            label,
+            id_col,
+            id_prefix,
+            infer_schema_rows,
+            batch_size,
+            has_header,
+            delimiter,
+        },
+    )
+    .map_err(gf_error_to_py_err)?;
+    Ok(PyNodeFrame::new(frame))
+}
+
+#[pyfunction]
 fn read_gf(path: &Bound<'_, PyAny>) -> PyResult<PyGraphFrame> {
     let path = path_from_py_any(path)?;
     let source = fs::read_to_string(&path)
@@ -2138,6 +2168,7 @@ fn _lynxes(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(list, m)?)?;
     m.add_function(wrap_pyfunction!(first, m)?)?;
     m.add_function(wrap_pyfunction!(last, m)?)?;
+    m.add_function(wrap_pyfunction!(read_csv_native_py, m)?)?;
     m.add_function(wrap_pyfunction!(read_gf, m)?)?;
     m.add_function(wrap_pyfunction!(read_gfb_py, m)?)?;
     m.add_function(wrap_pyfunction!(read_parquet_graph_py, m)?)?;
@@ -3396,6 +3427,16 @@ fn path_from_py_any(path: &Bound<'_, PyAny>) -> PyResult<PathBuf> {
     Err(PyTypeError::new_err(
         "path arguments must be str or os.PathLike[str]",
     ))
+}
+
+fn csv_delimiter_byte(delimiter: &str) -> PyResult<u8> {
+    let bytes = delimiter.as_bytes();
+    if bytes.len() != 1 {
+        return Err(PyValueError::new_err(
+            "delimiter must be a single-byte character",
+        ));
+    }
+    Ok(bytes[0])
 }
 
 #[derive(Debug, Clone, Copy)]

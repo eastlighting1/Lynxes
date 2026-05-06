@@ -5,6 +5,7 @@ Import the native extension for core functionality.
 Public API symbols are re-exported here for stable user-facing access.
 """
 
+from lynxes._csv import read_csv
 from lynxes._lynxes import (
     AggExpr,
     Any,
@@ -70,6 +71,7 @@ __all__ = [
     "edge",
     "graph",
     "partition_graph",
+    "read_csv",
     "read_arangodb",
     "read_gf",
     "read_gfb",

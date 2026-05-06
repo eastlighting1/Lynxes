@@ -1,7 +1,9 @@
 use std::{fs::File, path::Path, sync::Arc};
 
 use arrow::{
-    array::{new_empty_array, Array, ArrayRef, ListBuilder, RecordBatch, StringArray, StringBuilder},
+    array::{
+        new_empty_array, Array, ArrayRef, ListBuilder, RecordBatch, StringArray, StringBuilder,
+    },
     csv::reader::{Format, ReaderBuilder},
     datatypes::{DataType, Field, Schema as ArrowSchema},
 };
@@ -104,10 +106,7 @@ pub fn read_csv_nodes(path: impl AsRef<Path>, options: &CsvNodeReadOptions) -> R
     NodeFrame::from_record_batch(batch)
 }
 
-fn concat_source_columns(
-    schema: &ArrowSchema,
-    batches: &[RecordBatch],
-) -> Result<Vec<ArrayRef>> {
+fn concat_source_columns(schema: &ArrowSchema, batches: &[RecordBatch]) -> Result<Vec<ArrayRef>> {
     let mut columns = Vec::with_capacity(schema.fields().len());
 
     for col_idx in 0..schema.fields().len() {

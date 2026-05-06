@@ -1,16 +1,16 @@
-mod frame_builder;
 #[cfg(not(target_arch = "wasm32"))]
 mod csv;
+mod frame_builder;
 mod gf_parser;
 mod gf_writer;
 mod gfb;
 #[cfg(not(target_arch = "wasm32"))]
 mod parquet;
 
-pub use gf_parser::{parse_gf, ParsedEdgeDecl, ParsedGfDocument, ParsedNodeDecl};
-pub use gf_writer::write_gf;
 #[cfg(not(target_arch = "wasm32"))]
 pub use csv::{read_csv_nodes, CsvNodeReadOptions};
+pub use gf_parser::{parse_gf, ParsedEdgeDecl, ParsedGfDocument, ParsedNodeDecl};
+pub use gf_writer::write_gf;
 #[cfg(not(target_arch = "wasm32"))]
 pub use gfb::{
     read_gfb, read_gfb_streaming, read_gfb_streaming_with_options, read_gfb_with_options,

@@ -36,10 +36,12 @@ The returned object is `SampledSubgraph`. The key fields are:
 ## Gather Feature Rows
 
 ```python
-feature_batch = g.nodes().gather_rows(sampled.node_row_ids)
+features = g.nodes().take(sampled.node_row_ids)
 ```
 
-This gives you a pyarrow `RecordBatch` in the sampled node order. That order is what matters. You should not assume the sampled frontier is already aligned with the original node table.
+This gives you a `NodeFrame` in the sampled node order. That order is what matters. You should not assume the sampled frontier is already aligned with the original node table.
+
+If you need the lower-level Arrow object, `g.nodes().gather_rows(sampled.node_row_ids)` still returns a pyarrow `RecordBatch`.
 
 ## Build A COO View
 
@@ -72,13 +74,16 @@ edge_index = torch.tensor(
 And for features:
 
 ```python
-table = feature_batch
-
-# Example: use one numeric column
-x = torch.tensor(table["age"].to_pylist(), dtype=torch.float32).unsqueeze(1)
+x = features.to_tensor(dtype="float32")
 ```
 
-For a real model you would usually convert several numeric columns together or move through NumPy first. The important point is that Lynxes has already done the graph-aware part:
+By default, `to_tensor()` uses `feature_columns()`, which excludes reserved graph metadata like `_id` and `_label` plus non-numeric columns. If your model expects a specific feature order, pass it explicitly:
+
+```python
+x = features.to_tensor(columns=["age", "score"], dtype="float32")
+```
+
+Dense tensor export materializes a contiguous 2D matrix by default. It is designed for a clean ML boundary, not as a zero-copy promise. The important point is that Lynxes has already done the graph-aware part:
 
 - structure sampling
 - sampled order tracking
@@ -92,10 +97,38 @@ A minimal sanity check looks like this:
 print(sampled.node_indices)
 print(sampled.edge_src)
 print(sampled.edge_dst)
-print(feature_batch.num_rows)
+print(len(features))
 ```
 
-`feature_batch.num_rows` should match `len(sampled.node_row_ids)`.
+`len(features)` should match `len(sampled.node_row_ids)`.
+
+## NumPy Export
+
+Use `to_numpy()` when your training stack wants NumPy first:
+
+```python
+x_np = features.to_numpy(columns=["age", "score"], dtype="float32")
+```
+
+`to_numpy()` and `to_tensor()` share the same column and row selection rules. Single-column export has shape `(N, 1)`, empty row selections preserve the column count, and `columns=[]` returns shape `(N, 0)`.
+
+Null numeric values follow PyArrow's `Array.to_numpy(zero_copy_only=False)` behavior before optional dtype casting. For training, it is usually better to impute or filter missing feature values before export so the model input policy is explicit.
+
+## Multiprocessing
+
+`NodeFrame` supports pickle round-trips by serializing through Arrow. That is the supported policy for Windows `spawn` workers and other multiprocessing environments:
+
+```python
+import multiprocessing as mp
+
+def worker(nodes):
+    return nodes.to_numpy(columns=["age"]).shape
+
+with mp.get_context("spawn").Pool(1) as pool:
+    shape = pool.apply(worker, (features,))
+```
+
+For very large frames, prefer writing Arrow/IPC-backed data once and passing file paths to workers when process startup memory matters.
 
 ## Why The Split Index Model Exists
 

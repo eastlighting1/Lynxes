@@ -43,7 +43,8 @@ use lynxes_plan::{
 use pyo3::{
     basic::CompareOp,
     exceptions::{
-        PyKeyError, PyNotImplementedError, PyOSError, PyRuntimeError, PyTypeError, PyValueError,
+        PyImportError, PyIndexError, PyKeyError, PyNotImplementedError, PyOSError, PyRuntimeError,
+        PyTypeError, PyValueError,
     },
     prelude::*,
     types::{PyAny, PyDict, PyList, PyTuple, PyType},
@@ -339,8 +340,9 @@ impl PyNodeFrame {
     }
 
     #[classmethod]
-    fn from_arrow(_cls: &Bound<'_, PyType>, batch: PyArrowType<RecordBatch>) -> PyResult<Self> {
-        let frame = NodeFrame::from_record_batch(batch.0).map_err(gf_error_to_py_err)?;
+    fn from_arrow(_cls: &Bound<'_, PyType>, input: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let batch = record_batch_from_pyarrow_input(input)?;
+        let frame = NodeFrame::from_record_batch(batch).map_err(gf_error_to_py_err)?;
         Ok(Self::new(frame))
     }
 
@@ -410,6 +412,118 @@ impl PyNodeFrame {
             .select(&columns_ref)
             .map_err(gf_error_to_py_err)?;
         Ok(Self::new(frame))
+    }
+
+    #[pyo3(signature = (*, include=None, exclude_reserved=true, numeric_only=true))]
+    fn feature_columns(
+        &self,
+        include: Option<Vec<String>>,
+        exclude_reserved: bool,
+        numeric_only: bool,
+    ) -> PyResult<Vec<String>> {
+        node_feature_columns(self.inner.as_ref(), include, exclude_reserved, numeric_only)
+    }
+
+    fn take(&self, indices: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let row_ids = extract_row_indices(indices, self.inner.len())?;
+        let batch = self
+            .inner
+            .gather_rows(&row_ids)
+            .map_err(gf_error_to_py_err)?;
+        let frame = NodeFrame::from_record_batch(batch).map_err(gf_error_to_py_err)?;
+        Ok(Self::new(frame))
+    }
+
+    #[pyo3(signature = (columns=None, indices=None, dtype=None, contiguous=true))]
+    fn to_numpy(
+        &self,
+        py: Python<'_>,
+        columns: Option<Vec<String>>,
+        indices: Option<&Bound<'_, PyAny>>,
+        dtype: Option<&Bound<'_, PyAny>>,
+        contiguous: bool,
+    ) -> PyResult<PyObject> {
+        let columns = resolve_feature_columns_for_export(self.inner.as_ref(), columns)?;
+        let batch = selected_node_batch_to_pyarrow(self.inner.as_ref(), indices, py)?;
+        let selected = select_pyarrow_columns(&batch.bind(py), &columns)?;
+        let numpy = py.import_bound("numpy").map_err(|_| {
+            PyImportError::new_err(
+                "NodeFrame.to_numpy requires numpy; install it with `pip install numpy`",
+            )
+        })?;
+        let rows = selected.bind(py).getattr("num_rows")?.extract::<usize>()?;
+
+        let matrix = if columns.is_empty() {
+            let shape = (rows, 0usize);
+            let kwargs = PyDict::new_bound(py);
+            if let Some(dtype) = dtype {
+                kwargs.set_item("dtype", dtype)?;
+            }
+            numpy.call_method("empty", (shape,), Some(&kwargs))?
+        } else {
+            let arrays = PyList::empty_bound(py);
+            let kwargs = PyDict::new_bound(py);
+            kwargs.set_item("zero_copy_only", false)?;
+            for column in &columns {
+                let arrow_array = selected.bind(py).call_method1("column", (column,))?;
+                let numpy_array = arrow_array.call_method("to_numpy", (), Some(&kwargs))?;
+                arrays.append(numpy_array)?;
+            }
+            let mut matrix = numpy.call_method1("column_stack", (arrays,))?;
+            if let Some(dtype) = dtype {
+                let kwargs = PyDict::new_bound(py);
+                kwargs.set_item("copy", false)?;
+                matrix = matrix.call_method("astype", (dtype,), Some(&kwargs))?;
+            }
+            matrix
+        };
+
+        let matrix = if contiguous {
+            numpy.call_method1("ascontiguousarray", (matrix,))?
+        } else {
+            matrix
+        };
+        Ok(matrix.unbind())
+    }
+
+    #[pyo3(signature = (columns=None, indices=None, dtype=None, device=None, contiguous=true))]
+    fn to_tensor(
+        &self,
+        py: Python<'_>,
+        columns: Option<Vec<String>>,
+        indices: Option<&Bound<'_, PyAny>>,
+        dtype: Option<&Bound<'_, PyAny>>,
+        device: Option<&Bound<'_, PyAny>>,
+        contiguous: bool,
+    ) -> PyResult<PyObject> {
+        let numpy_array = self.to_numpy(py, columns, indices, None, true)?;
+        let torch = py.import_bound("torch").map_err(|_| {
+            PyImportError::new_err(
+                "NodeFrame.to_tensor requires PyTorch; install it with `pip install torch`",
+            )
+        })?;
+
+        let kwargs = PyDict::new_bound(py);
+        if let Some(dtype) = dtype {
+            if let Ok(name) = dtype.extract::<String>() {
+                kwargs.set_item("dtype", torch.getattr(name.as_str())?)?;
+            } else {
+                kwargs.set_item("dtype", dtype)?;
+            }
+        } else {
+            kwargs.set_item("dtype", torch.getattr("float32")?)?;
+        }
+        if let Some(device) = device {
+            kwargs.set_item("device", device)?;
+        }
+
+        let tensor = torch.call_method("as_tensor", (numpy_array.bind(py),), Some(&kwargs))?;
+        let tensor = if contiguous {
+            tensor.call_method0("contiguous")?
+        } else {
+            tensor
+        };
+        Ok(tensor.unbind())
     }
 
     /// Concatenate multiple `NodeFrame`s into one (union of rows, schemas must be compatible).
@@ -524,6 +638,16 @@ impl PyNodeFrame {
 
     fn to_pyarrow(&self, py: Python<'_>) -> PyResult<PyObject> {
         self.to_arrow_impl(py)
+    }
+
+    fn __reduce__(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let cls = py.get_type_bound::<PyNodeFrame>();
+        let from_arrow = cls.getattr("from_arrow")?.unbind();
+        let batch = self.to_arrow_impl(py)?;
+        let args = PyTuple::new_bound(py, [batch]).unbind();
+        Ok(PyTuple::new_bound(py, [from_arrow, args.into()])
+            .unbind()
+            .into())
     }
 }
 
@@ -3661,6 +3785,184 @@ fn record_batch_from_py_mapping(
 
     RecordBatch::try_new(Arc::new(Schema::new(Fields::from(fields))), arrays)
         .map_err(|err| PyValueError::new_err(err.to_string()))
+}
+
+fn record_batch_from_pyarrow_input(input: &Bound<'_, PyAny>) -> PyResult<RecordBatch> {
+    if let Ok(batch) = input.extract::<PyArrowType<RecordBatch>>() {
+        return Ok(batch.0);
+    }
+
+    if input.hasattr("combine_chunks")? && input.hasattr("to_batches")? {
+        let combined = input.call_method0("combine_chunks")?;
+        return single_record_batch_from_pyarrow_table(&combined);
+    }
+
+    Err(PyTypeError::new_err(
+        "NodeFrame.from_arrow expects a pyarrow.RecordBatch or pyarrow.Table",
+    ))
+}
+
+fn single_record_batch_from_pyarrow_table(table: &Bound<'_, PyAny>) -> PyResult<RecordBatch> {
+    let batches = table.call_method0("to_batches")?;
+    let batches = batches
+        .downcast::<PyList>()
+        .map_err(|_| PyTypeError::new_err("pyarrow.Table.to_batches() did not return a list"))?;
+
+    if batches.len() != 1 {
+        return Err(PyValueError::new_err(format!(
+            "expected combine_chunks().to_batches() to produce one RecordBatch, got {}",
+            batches.len()
+        )));
+    }
+
+    batches
+        .get_item(0)?
+        .extract::<PyArrowType<RecordBatch>>()
+        .map(|batch| batch.0)
+        .map_err(|err| PyTypeError::new_err(format!("failed to read pyarrow RecordBatch: {err}")))
+}
+
+fn node_feature_columns(
+    frame: &NodeFrame,
+    include: Option<Vec<String>>,
+    exclude_reserved: bool,
+    numeric_only: bool,
+) -> PyResult<Vec<String>> {
+    let schema = frame.schema();
+    let names = match include {
+        Some(include) => {
+            for name in &include {
+                if schema.field_with_name(name).is_err() {
+                    return Err(PyKeyError::new_err(format!("column not found: {name}")));
+                }
+            }
+            include
+        }
+        None => frame
+            .column_names()
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    };
+
+    let mut out = Vec::new();
+    for name in names {
+        if exclude_reserved && is_reserved_node_column(&name) {
+            continue;
+        }
+        let field = schema
+            .field_with_name(&name)
+            .map_err(|_| PyKeyError::new_err(format!("column not found: {name}")))?;
+        if numeric_only && !is_numeric_arrow_type(field.data_type()) {
+            continue;
+        }
+        out.push(name);
+    }
+    Ok(out)
+}
+
+fn resolve_feature_columns_for_export(
+    frame: &NodeFrame,
+    columns: Option<Vec<String>>,
+) -> PyResult<Vec<String>> {
+    let columns = match columns {
+        Some(columns) => columns,
+        None => node_feature_columns(frame, None, true, true)?,
+    };
+
+    for column in &columns {
+        let field = frame
+            .schema()
+            .field_with_name(column)
+            .map_err(|_| PyKeyError::new_err(format!("column not found: {column}")))?;
+        if !is_numeric_arrow_type(field.data_type()) {
+            return Err(PyTypeError::new_err(format!(
+                "column {column} has non-numeric type {:?}; choose numeric feature columns",
+                field.data_type()
+            )));
+        }
+    }
+    Ok(columns)
+}
+
+fn is_reserved_node_column(name: &str) -> bool {
+    name.starts_with('_')
+}
+
+fn is_numeric_arrow_type(dtype: &DataType) -> bool {
+    matches!(
+        dtype,
+        DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Float16
+            | DataType::Float32
+            | DataType::Float64
+    )
+}
+
+fn selected_node_batch_to_pyarrow(
+    frame: &NodeFrame,
+    indices: Option<&Bound<'_, PyAny>>,
+    py: Python<'_>,
+) -> PyResult<PyObject> {
+    let batch = if let Some(indices) = indices {
+        let row_ids = extract_row_indices(indices, frame.len())?;
+        frame.gather_rows(&row_ids).map_err(gf_error_to_py_err)?
+    } else {
+        frame.to_record_batch().clone()
+    };
+
+    batch
+        .to_pyarrow(py)
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+}
+
+fn select_pyarrow_columns(batch: &Bound<'_, PyAny>, columns: &[String]) -> PyResult<PyObject> {
+    let py = batch.py();
+    let columns = PyList::new_bound(py, columns);
+    batch
+        .call_method1("select", (columns,))
+        .map(|selected| selected.unbind())
+}
+
+fn extract_row_indices(indices: &Bound<'_, PyAny>, len: usize) -> PyResult<Vec<u32>> {
+    let normalized = if indices.hasattr("detach")? {
+        indices
+            .call_method0("detach")?
+            .call_method0("cpu")?
+            .call_method0("tolist")?
+    } else if indices.hasattr("to_pylist")? {
+        indices.call_method0("to_pylist")?
+    } else if indices.hasattr("tolist")? {
+        indices.call_method0("tolist")?
+    } else {
+        indices.clone()
+    };
+
+    let values = normalized.extract::<Vec<i64>>().map_err(|_| {
+        PyTypeError::new_err(
+            "indices must be a one-dimensional sequence, numpy array, pyarrow array, or torch tensor of integers",
+        )
+    })?;
+
+    values
+        .into_iter()
+        .map(|idx| {
+            if idx < 0 || idx as usize >= len {
+                Err(PyIndexError::new_err(format!(
+                    "row index {idx} is out of bounds for NodeFrame of length {len}"
+                )))
+            } else {
+                Ok(idx as u32)
+            }
+        })
+        .collect()
 }
 
 fn py_column_from_any(

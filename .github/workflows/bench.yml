@@ -18,6 +18,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  LYNXES_FULL_BENCH: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
 
 jobs:
   # ── Rust criterion benchmarks ─────────────────────────────────────────────────
@@ -36,8 +37,8 @@ jobs:
       - name: Run criterion benchmarks
         run: |
           cargo bench \
-            --workspace \
-            --exclude lynxes-python \
+            -p lynxes-core \
+            --benches \
             -- --output-format bencher | tee rust-bench-output.txt
 
       - name: Upload criterion HTML report

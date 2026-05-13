@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use arrow_array::builder::{ListBuilder, StringBuilder};
 use arrow_array::{ArrayRef, Int64Array, Int8Array, RecordBatch, StringArray};
@@ -70,10 +71,25 @@ fn make_projection_graph(nodes: usize, edges: usize) -> GraphFrame {
     GraphFrame::new(nodes, edges).unwrap()
 }
 
-fn bench_terminal_projection(c: &mut Criterion) {
-    let graph = make_projection_graph(50_000, 200_000);
+fn full_bench_enabled() -> bool {
+    std::env::var_os("LYNXES_FULL_BENCH").is_some_and(|value| value == "1")
+}
 
-    c.bench_function("terminal_projection_table_preview", |b| {
+fn bench_terminal_projection(c: &mut Criterion) {
+    let (nodes, edges) = if full_bench_enabled() {
+        (50_000, 200_000)
+    } else {
+        (5_000, 20_000)
+    };
+    let graph = make_projection_graph(nodes, edges);
+
+    let mut group = c.benchmark_group("terminal_projection");
+    if !full_bench_enabled() {
+        group.sample_size(10);
+        group.measurement_time(Duration::from_secs(2));
+    }
+
+    group.bench_function("table_preview", |b| {
         b.iter(|| {
             black_box(
                 graph
@@ -90,7 +106,7 @@ fn bench_terminal_projection(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("terminal_projection_glimpse", |b| {
+    group.bench_function("glimpse", |b| {
         b.iter(|| {
             black_box(
                 graph
@@ -106,6 +122,8 @@ fn bench_terminal_projection(c: &mut Criterion) {
             )
         })
     });
+
+    group.finish();
 }
 
 criterion_group!(benches, bench_terminal_projection);

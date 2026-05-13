@@ -86,9 +86,18 @@ fn seed_ids(count: u32) -> Vec<String> {
     (0..count).map(node_id).collect()
 }
 
+fn full_bench_enabled() -> bool {
+    std::env::var_os("LYNXES_FULL_BENCH").is_some_and(|value| value == "1")
+}
+
 fn bench_sample_neighbors(c: &mut Criterion) {
-    let graph = graph_with_regular_out_degree(50_000, 32);
-    let seeds = Arc::new(seed_ids(1_000));
+    let (node_count, seed_count) = if full_bench_enabled() {
+        (50_000, 1_000)
+    } else {
+        (10_000, 200)
+    };
+    let graph = graph_with_regular_out_degree(node_count, 32);
+    let seeds = Arc::new(seed_ids(seed_count));
     let seed_refs = Arc::new(seeds.iter().map(|s| s.as_str()).collect::<Vec<_>>());
     let config = SamplingConfig {
         hops: 2,
@@ -102,7 +111,12 @@ fn bench_sample_neighbors(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(4));
     group.throughput(Throughput::Elements(seed_refs.len() as u64));
-    group.bench_function("2hop_1000_seeds_25x10", |b| {
+    let bench_id = if full_bench_enabled() {
+        "2hop_1000_seeds_25x10"
+    } else {
+        "2hop_200_seeds_25x10"
+    };
+    group.bench_function(bench_id, |b| {
         let seed_refs = Arc::clone(&seed_refs);
         b.iter(|| {
             black_box(
@@ -116,13 +130,23 @@ fn bench_sample_neighbors(c: &mut Criterion) {
 }
 
 fn bench_to_coo(c: &mut Criterion) {
-    let graph = graph_with_regular_out_degree(100_000, 10);
+    let node_count = if full_bench_enabled() {
+        100_000
+    } else {
+        10_000
+    };
+    let graph = graph_with_regular_out_degree(node_count, 10);
 
     let mut group = c.benchmark_group("gnn_to_coo");
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(4));
     group.throughput(Throughput::Elements(graph.edge_count() as u64));
-    group.bench_function("1m_edges", |b| {
+    let bench_id = if full_bench_enabled() {
+        "1m_edges"
+    } else {
+        "100k_edges"
+    };
+    group.bench_function(bench_id, |b| {
         b.iter(|| {
             let (src, dst) = graph.to_coo();
             black_box((src.len(), dst.len()))
@@ -132,15 +156,27 @@ fn bench_to_coo(c: &mut Criterion) {
 }
 
 fn bench_random_walk(c: &mut Criterion) {
-    let graph = graph_with_regular_out_degree(50_000, 32);
-    let seeds = Arc::new(seed_ids(1_000));
+    let (node_count, seed_count, length, walks_per_node) = if full_bench_enabled() {
+        (50_000, 1_000, 80, 10)
+    } else {
+        (10_000, 200, 40, 4)
+    };
+    let graph = graph_with_regular_out_degree(node_count, 32);
+    let seeds = Arc::new(seed_ids(seed_count));
     let seed_refs = Arc::new(seeds.iter().map(|s| s.as_str()).collect::<Vec<_>>());
 
     let mut group = c.benchmark_group("gnn_random_walk");
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(4));
-    group.throughput(Throughput::Elements((seed_refs.len() * 10) as u64));
-    group.bench_function("length_80_walks_10_seeds_1000", |b| {
+    group.throughput(Throughput::Elements(
+        (seed_refs.len() * walks_per_node) as u64,
+    ));
+    let bench_id = if full_bench_enabled() {
+        "length_80_walks_10_seeds_1000"
+    } else {
+        "length_40_walks_4_seeds_200"
+    };
+    group.bench_function(bench_id, |b| {
         let seed_refs = Arc::clone(&seed_refs);
         b.iter_batched(
             || seed_refs.as_slice(),
@@ -149,8 +185,8 @@ fn bench_random_walk(c: &mut Criterion) {
                     graph
                         .random_walk(
                             black_box(starts),
-                            black_box(80),
-                            black_box(10),
+                            black_box(length),
+                            black_box(walks_per_node),
                             black_box(Direction::Out),
                             black_box(&EdgeTypeSpec::Any),
                         )

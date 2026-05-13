@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use arrow_array::builder::{ListBuilder, StringBuilder};
 use arrow_array::{ArrayRef, Int64Array, RecordBatch, StringArray};
@@ -99,6 +100,10 @@ fn manhattan(node: &str, dst: &str) -> f64 {
     ((x1 - x2).abs() + (y1 - y2).abs()) as f64
 }
 
+fn full_bench_enabled() -> bool {
+    std::env::var_os("LYNXES_FULL_BENCH").is_some_and(|value| value == "1")
+}
+
 fn bench_astar_vs_dijkstra(c: &mut Criterion) {
     let graph = corridor_graph(1000, 8);
     let config = ShortestPathConfig {
@@ -110,6 +115,10 @@ fn bench_astar_vs_dijkstra(c: &mut Criterion) {
     let dst = "999:0";
 
     let mut group = c.benchmark_group("astar_vs_dijkstra_corridor_1000x8");
+    if !full_bench_enabled() {
+        group.sample_size(10);
+        group.measurement_time(Duration::from_secs(2));
+    }
     group.bench_function("dijkstra", |b| {
         b.iter(|| {
             black_box(

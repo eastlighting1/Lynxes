@@ -6,7 +6,7 @@
 |---|---|---|
 | `ci.yml` | PR → main, push → main/dev | Rust lint + tests, Python tests |
 | `release.yml` | push tag `v*` | Build 5-platform wheels → PyPI |
-| `bench.yml` | push → main (engine files), manual | Criterion + Python benchmarks |
+| `bench.yml` | push → main (engine files), manual | Smoke benchmarks on push, full benchmarks manually |
 
 ---
 
@@ -74,7 +74,7 @@ No API tokens needed — OIDC handles authentication automatically.
 ## `bench.yml` — Benchmarks
 
 ### Automatic (push to main, engine code only)
-Runs Rust criterion benchmarks + Python benchmarks at sizes 1k and 10k.
+Runs smoke Rust Criterion benchmarks + Python benchmarks at size 1k.
 Results are uploaded as artifacts (30-day retention).
 
 ### Manual
@@ -83,7 +83,7 @@ Actions → Benchmarks → Run workflow
   save-baseline: true   # optional, to save as new reference
 ```
 
-The full 100k-node benchmark should be run locally:
+Manual runs set `LYNXES_FULL_BENCH=1`, enabling the larger Rust benchmark inputs and Python sizes 1k + 10k. The full 100k-node Python benchmark should still be run locally:
 ```bash
 cd py-lynxes
 uv run python tests/benchmark/bench_vs_networkx.py --sizes 100000

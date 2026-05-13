@@ -4,6 +4,7 @@
 // single-node neighbor queries on graphs of 100K and 1M nodes.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use arrow_array::{Int8Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
@@ -90,8 +91,16 @@ fn linear_neighbors<'a>(
 
 // ── Benchmarks ────────────────────────────────────────────────────────────────
 
+fn full_bench_enabled() -> bool {
+    std::env::var_os("LYNXES_FULL_BENCH").is_some_and(|value| value == "1")
+}
+
 fn bench_csr_lookup(c: &mut Criterion) {
     let mut group = c.benchmark_group("csr_neighbor_lookup");
+    if !full_bench_enabled() {
+        group.sample_size(10);
+        group.measurement_time(Duration::from_secs(2));
+    }
 
     for &n in &[100_000u32, 1_000_000u32] {
         let hub_degree = 100;
@@ -111,6 +120,10 @@ fn bench_csr_lookup(c: &mut Criterion) {
 
 fn bench_linear_scan(c: &mut Criterion) {
     let mut group = c.benchmark_group("linear_scan_neighbor_lookup");
+    if !full_bench_enabled() {
+        group.sample_size(10);
+        group.measurement_time(Duration::from_secs(2));
+    }
 
     for &n in &[100_000u32, 1_000_000u32] {
         let hub_degree = 100u32;
@@ -138,6 +151,10 @@ fn bench_linear_scan(c: &mut Criterion) {
 
 fn bench_edge_frame_csr_lookup(c: &mut Criterion) {
     let mut group = c.benchmark_group("edge_frame_csr_lookup");
+    if !full_bench_enabled() {
+        group.sample_size(10);
+        group.measurement_time(Duration::from_secs(2));
+    }
 
     // Only 100K for EdgeFrame (string-based, slower to build)
     let n = 100_000u32;

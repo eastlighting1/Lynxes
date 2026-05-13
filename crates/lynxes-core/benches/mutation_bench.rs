@@ -98,15 +98,24 @@ fn hub_graph(node_count: u32, hub_degree: u32) -> GraphFrame {
     graph_with_pairs(node_count, &pairs)
 }
 
+fn full_bench_enabled() -> bool {
+    std::env::var_os("LYNXES_FULL_BENCH").is_some_and(|value| value == "1")
+}
+
 fn bench_single_edge_insert_100k(c: &mut Criterion) {
-    let insert_count = 100_000u32;
+    let insert_count = if full_bench_enabled() {
+        100_000
+    } else {
+        10_000
+    };
     let ids = Arc::new((1..=insert_count).map(node_id).collect::<Vec<_>>());
 
     let mut group = c.benchmark_group("mutation_single_edge_insert");
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(4));
     group.throughput(Throughput::Elements(insert_count as u64));
-    group.bench_function("100k", |b| {
+    let bench_id = if full_bench_enabled() { "100k" } else { "10k" };
+    group.bench_function(bench_id, |b| {
         let ids = Arc::clone(&ids);
         b.iter_batched(
             || empty_graph(insert_count + 1).into_mutable(),
@@ -123,12 +132,17 @@ fn bench_single_edge_insert_100k(c: &mut Criterion) {
 }
 
 fn bench_batch_node_insert_100k(c: &mut Criterion) {
-    let batch_count = 100_000u32;
+    let batch_count = if full_bench_enabled() {
+        100_000
+    } else {
+        10_000
+    };
     let mut group = c.benchmark_group("mutation_batch_node_insert");
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(4));
     group.throughput(Throughput::Elements(batch_count as u64));
-    group.bench_function("100k", |b| {
+    let bench_id = if full_bench_enabled() { "100k" } else { "10k" };
+    group.bench_function(bench_id, |b| {
         b.iter_batched(
             || {
                 (
@@ -147,8 +161,11 @@ fn bench_batch_node_insert_100k(c: &mut Criterion) {
 }
 
 fn bench_frozen_chunk_neighbor_lookup(c: &mut Criterion) {
-    let chunk_count = 64u32;
-    let chunk_width = 1024u32;
+    let (chunk_count, chunk_width) = if full_bench_enabled() {
+        (64u32, 1024u32)
+    } else {
+        (16u32, 512u32)
+    };
     let edge_count = chunk_count * chunk_width;
     let ids = Arc::new((1..=edge_count).map(node_id).collect::<Vec<_>>());
 
@@ -156,7 +173,12 @@ fn bench_frozen_chunk_neighbor_lookup(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(4));
     group.throughput(Throughput::Elements(edge_count as u64));
-    group.bench_function("64x1024", |b| {
+    let bench_id = if full_bench_enabled() {
+        "64x1024"
+    } else {
+        "16x512"
+    };
+    group.bench_function(bench_id, |b| {
         let ids = Arc::clone(&ids);
         b.iter_batched(
             || {
@@ -174,8 +196,11 @@ fn bench_frozen_chunk_neighbor_lookup(c: &mut Criterion) {
 }
 
 fn bench_compact_1m_edges(c: &mut Criterion) {
-    let node_count = 100_000u32;
-    let edge_count = 1_000_000u32;
+    let (node_count, edge_count) = if full_bench_enabled() {
+        (100_000u32, 1_000_000u32)
+    } else {
+        (10_000u32, 100_000u32)
+    };
     let edge_pairs = Arc::new(
         (0..edge_count)
             .map(|i| {
@@ -192,7 +217,12 @@ fn bench_compact_1m_edges(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(5));
     group.throughput(Throughput::Elements(edge_count as u64));
-    group.bench_function("1m_edges", |b| {
+    let bench_id = if full_bench_enabled() {
+        "1m_edges"
+    } else {
+        "100k_edges"
+    };
+    group.bench_function(bench_id, |b| {
         let edge_pairs = Arc::clone(&edge_pairs);
         let ids = Arc::clone(&ids);
         b.iter_batched(
@@ -216,12 +246,17 @@ fn bench_compact_1m_edges(c: &mut Criterion) {
 }
 
 fn bench_delete_hub_node_degree_10000(c: &mut Criterion) {
-    let degree = 10_000u32;
+    let degree = if full_bench_enabled() { 10_000 } else { 1_000 };
     let mut group = c.benchmark_group("mutation_delete_hub_node");
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(4));
     group.throughput(Throughput::Elements(degree as u64));
-    group.bench_function("degree_10000", |b| {
+    let bench_id = if full_bench_enabled() {
+        "degree_10000"
+    } else {
+        "degree_1000"
+    };
+    group.bench_function(bench_id, |b| {
         b.iter_batched(
             || hub_graph(degree + 1, degree).into_mutable(),
             |mut graph| {

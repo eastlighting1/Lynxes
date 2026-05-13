@@ -8,6 +8,7 @@
 // from frontier partitioning.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use arrow_array::builder::{ListBuilder, StringBuilder};
 use arrow_array::{Int8Array, ListArray, RecordBatch, StringArray};
@@ -88,8 +89,16 @@ fn make_graph(n: u32) -> GraphFrame {
 
 // ── Benchmarks ────────────────────────────────────────────────────────────────
 
+fn full_bench_enabled() -> bool {
+    std::env::var_os("LYNXES_FULL_BENCH").is_some_and(|value| value == "1")
+}
+
 fn bench_parallel_expand(c: &mut Criterion) {
     let mut group = c.benchmark_group("parallel_expand");
+    if !full_bench_enabled() {
+        group.sample_size(10);
+        group.measurement_time(Duration::from_secs(2));
+    }
 
     let serial_opts = OptimizerOptions {
         predicate_pushdown: false,
@@ -106,7 +115,13 @@ fn bench_parallel_expand(c: &mut Criterion) {
         ..serial_opts
     };
 
-    for n in [1_000u32, 10_000, 50_000] {
+    let sizes: &[u32] = if full_bench_enabled() {
+        &[1_000, 10_000, 50_000]
+    } else {
+        &[1_000, 10_000]
+    };
+
+    for &n in sizes {
         let graph = make_graph(n);
 
         group.bench_with_input(BenchmarkId::new("serial", n), &graph, |b, g| {

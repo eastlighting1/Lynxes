@@ -134,8 +134,13 @@ fn three_hop_pattern() -> Pattern {
     ])
 }
 
+fn full_bench_enabled() -> bool {
+    std::env::var_os("LYNXES_FULL_BENCH").is_some_and(|value| value == "1")
+}
+
 fn bench_pattern_match_two_hop(c: &mut Criterion) {
-    let graph = typed_graph(5_000);
+    let node_count = if full_bench_enabled() { 5_000 } else { 500 };
+    let graph = typed_graph(node_count);
     let pattern = two_hop_pattern();
 
     let mut group = c.benchmark_group("kg_pattern_match");
@@ -155,7 +160,8 @@ fn bench_pattern_match_two_hop(c: &mut Criterion) {
 }
 
 fn bench_pattern_match_three_hop(c: &mut Criterion) {
-    let graph = typed_graph(5_000);
+    let node_count = if full_bench_enabled() { 5_000 } else { 500 };
+    let graph = typed_graph(node_count);
     let pattern = three_hop_pattern();
 
     let mut group = c.benchmark_group("kg_pattern_match");

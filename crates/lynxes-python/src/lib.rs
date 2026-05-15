@@ -47,7 +47,7 @@ use pyo3::{
         PyTypeError, PyValueError,
     },
     prelude::*,
-    types::{PyAny, PyDict, PyList, PyTuple, PyType},
+    types::{PyAny, PyBytes, PyDict, PyList, PyTuple, PyType},
     wrap_pyfunction,
 };
 #[pyclass(name = "NodeFrame", module = "lynxes")]
@@ -486,7 +486,7 @@ impl PyNodeFrame {
         Ok(matrix.unbind())
     }
 
-    #[pyo3(signature = (columns=None, indices=None, dtype=None, device=None, contiguous=true))]
+    #[pyo3(signature = (columns=None, indices=None, dtype=None, device=None, contiguous=true, out=None))]
     fn to_tensor(
         &self,
         py: Python<'_>,
@@ -495,7 +495,35 @@ impl PyNodeFrame {
         dtype: Option<&Bound<'_, PyAny>>,
         device: Option<&Bound<'_, PyAny>>,
         contiguous: bool,
+        out: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyObject> {
+        if let Some(out_tensor) = out {
+            let columns = resolve_feature_columns_for_export(self.inner.as_ref(), columns)?;
+            let batch = selected_node_batch_to_pyarrow(self.inner.as_ref(), indices, py)?;
+            let selected = select_pyarrow_columns(&batch.bind(py), &columns)?;
+            
+            let _numpy = py.import_bound("numpy").map_err(|_| {
+                PyImportError::new_err("NodeFrame.to_tensor(out=...) requires numpy")
+            })?;
+            
+            let kwargs = PyDict::new_bound(py);
+            kwargs.set_item("zero_copy_only", false)?;
+            
+            let out_np = out_tensor.call_method0("numpy")?;
+            for (i, column) in columns.iter().enumerate() {
+                let arrow_array = selected.bind(py).call_method1("column", (column,))?;
+                let numpy_array = arrow_array.call_method("to_numpy", (), Some(&kwargs))?;
+                
+                let builtins = py.import_bound("builtins")?;
+                let slice_class = builtins.getattr("slice")?;
+                let slice_all = slice_class.call1((py.None(), py.None(), py.None()))?;
+                
+                let index_tuple = PyTuple::new_bound(py, [slice_all.into_any(), i.into_py(py).into_bound(py)]);
+                out_np.set_item(index_tuple, numpy_array)?;
+            }
+            return Ok(out_tensor.clone().unbind());
+        }
+
         let numpy_array = self.to_numpy(py, columns, indices, None, true)?;
         let torch = py.import_bound("torch").map_err(|_| {
             PyImportError::new_err(
@@ -3932,6 +3960,10 @@ fn select_pyarrow_columns(batch: &Bound<'_, PyAny>, columns: &[String]) -> PyRes
 }
 
 fn extract_row_indices(indices: &Bound<'_, PyAny>, len: usize) -> PyResult<Vec<u32>> {
+    if let Ok(values) = extract_row_indices_via_numpy(indices, len) {
+        return Ok(values);
+    }
+
     let normalized = if indices.hasattr("detach")? {
         indices
             .call_method0("detach")?
@@ -3954,6 +3986,51 @@ fn extract_row_indices(indices: &Bound<'_, PyAny>, len: usize) -> PyResult<Vec<u
     values
         .into_iter()
         .map(|idx| {
+            if idx < 0 || idx as usize >= len {
+                Err(PyIndexError::new_err(format!(
+                    "row index {idx} is out of bounds for NodeFrame of length {len}"
+                )))
+            } else {
+                Ok(idx as u32)
+            }
+        })
+        .collect()
+}
+
+fn extract_row_indices_via_numpy(indices: &Bound<'_, PyAny>, len: usize) -> PyResult<Vec<u32>> {
+    let py = indices.py();
+    let numpy = py.import_bound("numpy")?;
+    let source = if indices.hasattr("detach")? {
+        indices
+            .call_method0("detach")?
+            .call_method0("cpu")?
+            .call_method0("numpy")?
+    } else if indices.hasattr("to_numpy")? {
+        indices.call_method0("to_numpy")?
+    } else {
+        indices.clone()
+    };
+
+    let kwargs = PyDict::new_bound(py);
+    kwargs.set_item("dtype", numpy.getattr("int64")?)?;
+    let array = numpy.call_method("asarray", (source,), Some(&kwargs))?;
+    let ndim = array.getattr("ndim")?.extract::<usize>()?;
+    if ndim != 1 {
+        return Err(PyTypeError::new_err("indices must be one-dimensional"));
+    }
+
+    let bytes_obj = array.call_method0("tobytes")?;
+    let bytes = bytes_obj.downcast::<PyBytes>()?;
+    let raw = bytes.as_bytes();
+    if raw.len() % std::mem::size_of::<i64>() != 0 {
+        return Err(PyTypeError::new_err("indices buffer is not int64-aligned"));
+    }
+
+    raw.chunks_exact(std::mem::size_of::<i64>())
+        .map(|chunk| {
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(chunk);
+            let idx = i64::from_ne_bytes(buf);
             if idx < 0 || idx as usize >= len {
                 Err(PyIndexError::new_err(format!(
                     "row index {idx} is out of bounds for NodeFrame of length {len}"

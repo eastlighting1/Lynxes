@@ -501,24 +501,25 @@ impl PyNodeFrame {
             let columns = resolve_feature_columns_for_export(self.inner.as_ref(), columns)?;
             let batch = selected_node_batch_to_pyarrow(self.inner.as_ref(), indices, py)?;
             let selected = select_pyarrow_columns(&batch.bind(py), &columns)?;
-            
+
             let _numpy = py.import_bound("numpy").map_err(|_| {
                 PyImportError::new_err("NodeFrame.to_tensor(out=...) requires numpy")
             })?;
-            
+
             let kwargs = PyDict::new_bound(py);
             kwargs.set_item("zero_copy_only", false)?;
-            
+
             let out_np = out_tensor.call_method0("numpy")?;
             for (i, column) in columns.iter().enumerate() {
                 let arrow_array = selected.bind(py).call_method1("column", (column,))?;
                 let numpy_array = arrow_array.call_method("to_numpy", (), Some(&kwargs))?;
-                
+
                 let builtins = py.import_bound("builtins")?;
                 let slice_class = builtins.getattr("slice")?;
                 let slice_all = slice_class.call1((py.None(), py.None(), py.None()))?;
-                
-                let index_tuple = PyTuple::new_bound(py, [slice_all.into_any(), i.into_py(py).into_bound(py)]);
+
+                let index_tuple =
+                    PyTuple::new_bound(py, [slice_all.into_any(), i.into_py(py).into_bound(py)]);
                 out_np.set_item(index_tuple, numpy_array)?;
             }
             return Ok(out_tensor.clone().unbind());
